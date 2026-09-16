@@ -108,12 +108,38 @@
 ||trafficstars.com^
 
 ! ---------------------------------------------------------------------------
-! Mobile / regional
+! In-app ad SDKs (these matter most for the Android app)
 ! ---------------------------------------------------------------------------
 ||adcolony.com^
+||adfox.ru^
+||adsmoloco.com^
+||adtrafficquality.google^
+||an.facebook.com^
 ||an.yandex.ru^
 ||applovin.com^
+||applvn.com^
+||bidmachine.io^
+||chartboost.com^
+||fyber.com^
 ||inmobi.com^
+||inner-active.mobi^
+||ironsrc.mobi^
+||liftoff.io^
+||mintegral.net^
+||mobfox.com^
+||mopub.com^
+||pangle.io^
+||pangolin-sdk-toutiao.com^
+||pglstatp-toutiao.com^
+||pubnative.net^
+||rayjump.com^
+||startappservice.com^
+||supersonicads.com^
+||tapjoy.com^
+||tapjoyads.com^
+||unityads.unity3d.com^
+||vungle.com^
+||yandexadexchange.net^
 
 ! ---------------------------------------------------------------------------
 ! Generic URL patterns

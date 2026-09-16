@@ -10,8 +10,8 @@ import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const DATA_SRC = readFileSync(path.join(ROOT, 'generated/cosmetic-data.js'), 'utf8');
-const SCRIPT_SRC = readFileSync(path.join(ROOT, 'src/content/cosmetic.js'), 'utf8');
+const DATA_SRC = readFileSync(path.join(ROOT, 'extension/generated/cosmetic-data.js'), 'utf8');
+const SCRIPT_SRC = readFileSync(path.join(ROOT, 'extension/src/content/cosmetic.js'), 'utf8');
 
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 

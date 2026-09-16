@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { hostMatches, hostSuffixes, isAllowlisted, isValidHostname, normalizeHost, parseHostInput } from '../src/shared/hosts.js';
+import { hostMatches, hostSuffixes, isAllowlisted, isValidHostname, normalizeHost, parseHostInput } from '../extension/src/shared/hosts.js';
 
 describe('hosts', () => {
   it('normalizes hostnames', () => {

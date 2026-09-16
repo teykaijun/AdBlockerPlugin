@@ -1,0 +1,8 @@
+<resources>
+    <string name="app_name">AdBlocker</string>
+    <string name="tile_label">AdBlocker</string>
+    <string name="channel_status">Protection status</string>
+    <string name="channel_status_description">Shows that AdBlocker is filtering and how much it blocked today.</string>
+    <string name="channel_problems">Problems</string>
+    <string name="channel_problems_description">Tells you when AdBlocker had to stop.</string>
+</resources>

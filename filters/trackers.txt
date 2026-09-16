@@ -80,6 +80,20 @@
 ||munchkin.marketo.net^
 
 ! ---------------------------------------------------------------------------
+! In-app analytics and install attribution
+! ---------------------------------------------------------------------------
+||app-measurement.com^
+||appmetrica.yandex.net^
+||appsflyer.com^
+||appsflyersdk.com^
+||firebaselogging-pa.googleapis.com^
+||flurry.com^
+||kochava.com^
+||mobile-collector.newrelic.com^
+||singular.net^
+||uxcam.com^
+
+! ---------------------------------------------------------------------------
 ! Data brokers and identity graphs
 ! ---------------------------------------------------------------------------
 ||6sc.co^

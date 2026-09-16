@@ -4,12 +4,17 @@
  * script (which also embeds the defaults into the content-script data file).
  */
 
-/** Built-in filter lists. Each id maps to `filters/<id>.txt` and a DNR ruleset. */
+/**
+ * Built-in filter lists. Each id maps to `filters/<id>.txt` and a DNR ruleset.
+ * `androidDescription` overrides the text shown in the Android app, which can
+ * only block whole domains.
+ */
 export const FILTER_LISTS = [
   {
     id: 'ads',
     title: 'Ads',
     description: 'Blocks ad networks and hides empty ad slots.',
+    androidDescription: 'Blocks ad networks in apps and websites.',
     enabledByDefault: true,
   },
   {

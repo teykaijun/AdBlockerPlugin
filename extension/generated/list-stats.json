@@ -1,11 +1,11 @@
 {
   "ads": {
-    "networkFilters": 93,
+    "networkFilters": 119,
     "networkRules": 6,
     "cosmeticFilters": 48
   },
   "trackers": {
-    "networkFilters": 76,
+    "networkFilters": 86,
     "networkRules": 11,
     "cosmeticFilters": 0
   },

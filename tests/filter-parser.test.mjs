@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { ALLOW_RULE_ID_BASE, RULE_PRIORITY } from '../src/shared/defaults.js';
-import { compileNetworkRules, parseFilterList } from '../src/shared/filter-parser.js';
+import { ALLOW_RULE_ID_BASE, RULE_PRIORITY } from '../extension/src/shared/defaults.js';
+import { compileNetworkRules, parseFilterList } from '../extension/src/shared/filter-parser.js';
 
 const one = (line) => {
   const { network, errors } = parseFilterList(line);

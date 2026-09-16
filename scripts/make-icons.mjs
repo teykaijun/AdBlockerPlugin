@@ -4,15 +4,15 @@
  * without any image library: shapes are defined analytically, supersampled
  * for anti-aliasing and written with a minimal PNG encoder.
  *
- *   icons/icon-{16,32,48,128}.png   active (red)
- *   icons/icon-off-{16,32}.png      paused (grey), used by chrome.action.setIcon
+ *   extension/icons/icon-{16,32,48,128}.png   active (red)
+ *   extension/icons/icon-off-{16,32}.png      paused (grey), used by chrome.action.setIcon
  */
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { deflateSync } from 'node:zlib';
 
-const OUT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'icons');
+const OUT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'extension', 'icons');
 const SAMPLES = 6;
 
 const PALETTES = {
@@ -130,5 +130,5 @@ function encodePng(width, height, rgba) {
 await mkdir(OUT, { recursive: true });
 for (const [name, size, palette] of VARIANTS) {
   await writeFile(path.join(OUT, name), render(size, PALETTES[palette]));
-  console.log(`icons/${name}`);
+  console.log(`extension/icons/${name}`);
 }

@@ -5,10 +5,13 @@ import path from 'node:path';
 import { describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { FILTER_LISTS, isBlockingRuleId } from '../src/shared/defaults.js';
+import { FILTER_LISTS, isBlockingRuleId } from '../extension/src/shared/defaults.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const manifest = JSON.parse(readFileSync(path.join(ROOT, 'manifest.json'), 'utf8'));
+const EXTENSION = path.join(ROOT, 'extension');
+const ANDROID_ASSETS = path.join(ROOT, 'android/app/src/main/assets/filters');
+const manifest = JSON.parse(readFileSync(path.join(EXTENSION, 'manifest.json'), 'utf8'));
+const HOSTNAME_RE = /^(?=.{1,253}$)[a-z0-9-]{1,63}(\.[a-z0-9-]{1,63})+$/;
 
 const CONDITION_KEYS = new Set([
   'urlFilter',
@@ -61,7 +64,7 @@ describe('build output', () => {
       'src/content/picker.js',
       'generated/list-stats.json',
     ];
-    for (const file of files) assert.ok(existsSync(path.join(ROOT, file)), `missing ${file}`);
+    for (const file of files) assert.ok(existsSync(path.join(EXTENSION, file)), `missing extension/${file}`);
   });
 
   it('declares one ruleset per filter list', () => {
@@ -73,7 +76,7 @@ describe('build output', () => {
 
   for (const resource of manifest.declarative_net_request.rule_resources) {
     it(`produces valid DNR rules for "${resource.id}"`, () => {
-      const rules = JSON.parse(readFileSync(path.join(ROOT, resource.path), 'utf8'));
+      const rules = JSON.parse(readFileSync(path.join(EXTENSION, resource.path), 'utf8'));
       const ids = new Set();
       for (const rule of rules) {
         assert.deepEqual(Object.keys(rule).sort(), ['action', 'condition', 'id', 'priority']);
@@ -90,4 +93,38 @@ describe('build output', () => {
       }
     });
   }
+});
+
+describe('Android assets', () => {
+  const index = JSON.parse(readFileSync(path.join(ANDROID_ASSETS, 'index.json'), 'utf8'));
+
+  it('indexes every list that has whole-domain rules', () => {
+    assert.deepEqual(
+      index.map((l) => l.id),
+      ['ads', 'trackers', 'social'],
+    );
+    for (const entry of index) {
+      assert.deepEqual(Object.keys(entry).sort(), ['description', 'domains', 'enabledByDefault', 'id', 'title']);
+      assert.ok(entry.domains > 0);
+    }
+  });
+
+  for (const entry of index) {
+    it(`writes one valid domain per line for "${entry.id}"`, () => {
+      const lines = readFileSync(path.join(ANDROID_ASSETS, `${entry.id}.txt`), 'utf8').trimEnd().split('\n');
+      assert.match(lines[0], /^# /);
+      const rules = lines.slice(1);
+      const blocked = rules.filter((l) => !l.startsWith('@@'));
+      assert.equal(blocked.length, entry.domains);
+      for (const line of rules) assert.match(line.replace(/^@@/, ''), HOSTNAME_RE, `bad line "${line}"`);
+      assert.equal(new Set(rules).size, rules.length, 'duplicate domains');
+    });
+  }
+
+  it('leaves out rules DNS cannot express', () => {
+    const trackers = readFileSync(path.join(ANDROID_ASSETS, 'trackers.txt'), 'utf8');
+    assert.match(trackers, /^google-analytics\.com$/m);
+    assert.doesNotMatch(trackers, /^facebook\.com$/m, '||facebook.com/tr^ has a path');
+    assert.doesNotMatch(trackers, /^googletagmanager\.com$/m, '||googletagmanager.com/gtag/js has a path');
+  });
 });
