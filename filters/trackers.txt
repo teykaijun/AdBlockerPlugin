@@ -1,0 +1,101 @@
+[Adblock Plus 2.0]
+! Title: AdBlocker Plugin – Trackers
+! Description: Analytics, session recording, tracking pixels and data brokers.
+! Note: Google Tag Manager containers (gtm.js) are intentionally not blocked,
+!       many sites break without them. Only the gtag.js analytics loader is.
+
+! ---------------------------------------------------------------------------
+! Web analytics
+! ---------------------------------------------------------------------------
+||google-analytics.com^
+||analytics.google.com^
+||googletagmanager.com/gtag/js
+||stats.g.doubleclick.net^
+||api.amplitude.com^
+||api2.amplitude.com^
+||cdn.amplitude.com^
+||chartbeat.com^
+||chartbeat.net^
+||cloudflareinsights.com^
+||heapanalytics.com^
+||hs-analytics.net^
+||kissmetrics.com^
+||mc.yandex.ru^
+||mixpanel.com^
+||mxpnl.com^
+||plausible.io/js/
+||plausible.io/api/event
+||quantcount.com^
+||quantserve.com^
+||scorecardresearch.com^
+||statcounter.com^
+||histats.com^
+||static.getclicky.com^
+||in.getclicky.com^
+||stats.wp.com^
+||pixel.wp.com^
+||woopra.com^
+||cdn.segment.com^
+||segment.io^
+||2o7.net^
+||omtrdc.net^
+/piwik.js$script
+/matomo.js$script
+
+! ---------------------------------------------------------------------------
+! Session recording and heatmaps
+! ---------------------------------------------------------------------------
+||clarity.ms^
+||crazyegg.com^
+||fullstory.com^
+||hotjar.com^
+||hotjar.io^
+||inspectlet.com^
+||luckyorange.com^
+||mouseflow.com^
+
+! ---------------------------------------------------------------------------
+! Performance beacons
+! ---------------------------------------------------------------------------
+||nr-data.net^
+||js-agent.newrelic.com^
+||rum-static.pingdom.net^
+||lux.speedcurve.com^
+
+! ---------------------------------------------------------------------------
+! Advertising pixels
+! ---------------------------------------------------------------------------
+||bat.bing.com^
+||connect.facebook.net/*/fbevents.js
+||facebook.com/tr^
+||analytics.tiktok.com^
+||px.ads.linkedin.com^
+||snap.licdn.com/li.lms-analytics/
+||tr.snapchat.com^
+||sc-static.net/scevent.min.js
+||ct.pinterest.com^
+||analytics.twitter.com^
+||static.ads-twitter.com^
+||t.co/i/adsct
+||munchkin.marketo.net^
+
+! ---------------------------------------------------------------------------
+! Data brokers and identity graphs
+! ---------------------------------------------------------------------------
+||6sc.co^
+||agkn.com^
+||bluekai.com^
+||bounceexchange.com^
+||crwdcntrl.net^
+||demdex.net^
+||everesttech.net^
+||exelator.com^
+||eyeota.net^
+||krxd.net^
+||mathtag.com^
+||mookie1.com^
+||pippio.com^
+||reveal.clearbit.com^
+||rlcdn.com^
+||tapad.com^
+||ws.zoominfo.com^

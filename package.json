@@ -1,0 +1,17 @@
+{
+  "name": "adblocker-plugin",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Manifest V3 ad and tracker blocker for Google Chrome.",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check": "node scripts/build.mjs --check",
+    "icons": "node scripts/make-icons.mjs",
+    "test": "node --test"
+  }
+}

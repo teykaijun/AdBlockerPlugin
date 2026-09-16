@@ -1,0 +1,181 @@
+[Adblock Plus 2.0]
+! Title: AdBlocker Plugin – Ads
+! Description: Ad servers, ad exchanges and ad placeholders.
+! Syntax: see README.md → "Filter syntax". Compiled by `npm run build`.
+
+! ---------------------------------------------------------------------------
+! Google
+! ---------------------------------------------------------------------------
+||doubleclick.net^
+||googlesyndication.com^
+||googleadservices.com^
+||googletagservices.com^
+||adservice.google.com^
+
+! ---------------------------------------------------------------------------
+! Exchanges, SSPs and DSPs
+! ---------------------------------------------------------------------------
+||33across.com^
+||360yield.com^
+||3lift.com^
+||adform.net^
+||adition.com^
+||adkernel.com^
+||admixer.net^
+||adnxs.com^
+||adroll.com^
+||adscale.de^
+||adsrvr.org^
+||adtelligent.com^
+||advertising.com^
+||amazon-adsystem.com^
+||bidswitch.net^
+||casalemedia.com^
+||contextweb.com^
+||criteo.com^
+||criteo.net^
+||districtm.io^
+||dotomi.com^
+||e-planning.net^
+||emxdgt.com^
+||gumgum.com^
+||improvedigital.com^
+||indexww.com^
+||kargo.com^
+||lijit.com^
+||media.net^
+||onetag-sys.com^
+||openx.net^
+||pubmatic.com^
+||rhythmone.com^
+||rubiconproject.com^
+||sharethrough.com^
+||smaato.net^
+||smartadserver.com^
+||smartclip.net^
+||sovrn.com^
+||spotxchange.com^
+||springserve.com^
+||teads.tv^
+||triplelift.com^
+||undertone.com^
+||yieldlab.net^
+||yieldlove.com^
+||yieldmo.com^
+||zedo.com^
+
+! ---------------------------------------------------------------------------
+! Ad serving, verification and rich media
+! ---------------------------------------------------------------------------
+||2mdn.net^
+||adsafeprotected.com^
+||adzerk.net^
+||buysellads.com^
+||carbonads.net^
+||connatix.com^
+||doubleverify.com^
+||flashtalking.com^
+||moatads.com^
+||serving-sys.com^
+
+! ---------------------------------------------------------------------------
+! Native / "recommended content" widgets
+! ---------------------------------------------------------------------------
+||adblade.com^
+||content.ad^
+||mgid.com^
+||ntv.io^
+||outbrain.com^
+||revcontent.com^
+||taboola.com^
+||zemanta.com^
+
+! ---------------------------------------------------------------------------
+! Pop-unders and aggressive networks
+! ---------------------------------------------------------------------------
+||adcash.com^
+||adsterra.com^
+||bidvertiser.com^
+||clickadu.com^
+||exoclick.com^
+||hilltopads.net^
+||infolinks.com^
+||juicyads.com^
+||popads.net^
+||popcash.net^
+||propellerads.com^
+||trafficjunky.net^
+||trafficstars.com^
+
+! ---------------------------------------------------------------------------
+! Mobile / regional
+! ---------------------------------------------------------------------------
+||adcolony.com^
+||an.yandex.ru^
+||applovin.com^
+||inmobi.com^
+
+! ---------------------------------------------------------------------------
+! Generic URL patterns
+! ---------------------------------------------------------------------------
+/adsbygoogle.js$script
+/prebid*.js$script
+/adserver/*$third-party
+/banner_ads/*$image
+/ad_banner_*$image
+
+! ---------------------------------------------------------------------------
+! Element hiding – generic
+! ---------------------------------------------------------------------------
+##.adsbygoogle
+##[id^="google_ads_iframe"]
+##[id^="div-gpt-ad"]
+##[id^="aswift_"][id$="_host"]
+##[data-google-query-id]
+##.GoogleActiveViewElement
+##iframe[src*="doubleclick.net"]
+##iframe[src*="googlesyndication.com"]
+##iframe[src*="amazon-adsystem.com"]
+##a[href^="https://ad.doubleclick.net/"]
+##amp-ad
+##amp-embed[type="taboola"]
+##amp-embed[type="outbrain"]
+##[id^="taboola-"]
+##.trc_rbox_container
+##.OUTBRAIN
+##.ob-widget
+##[id^="rcjsload_"]
+##[id^="ezoic-pub-ad-placeholder-"]
+##.ezoic-ad
+###carbonads
+##[id^="bsa-zone_"]
+##.ad-banner
+##.ad-container
+##.ad-slot
+##.ad-wrapper
+##.advertisement
+##[aria-label="Advertisement"]
+##div[id^="ad-slot-"]
+
+! ---------------------------------------------------------------------------
+! Element hiding – site specific
+! ---------------------------------------------------------------------------
+youtube.com###masthead-ad
+youtube.com###player-ads
+youtube.com##ytd-ad-slot-renderer
+youtube.com##ytd-display-ad-renderer
+youtube.com##ytd-promoted-sparkles-web-renderer
+youtube.com##ytd-in-feed-ad-layout-renderer
+youtube.com##ytd-banner-promo-renderer
+youtube.com##ytd-statement-banner-renderer
+youtube.com##ytd-merch-shelf-renderer
+youtube.com##ytd-rich-item-renderer:has(> #content > ytd-ad-slot-renderer)
+youtube.com##.ytp-ad-overlay-container
+google.com###tads
+google.com###tadsb
+google.com###bottomads
+google.com##div[data-text-ad]
+bing.com##.b_ad
+reddit.com##shreddit-ad-post
+reddit.com##shreddit-comments-page-ad
+reddit.com##.promotedlink

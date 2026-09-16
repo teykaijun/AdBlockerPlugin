@@ -1,0 +1,22 @@
+{
+  "ads": {
+    "networkFilters": 93,
+    "networkRules": 6,
+    "cosmeticFilters": 48
+  },
+  "trackers": {
+    "networkFilters": 76,
+    "networkRules": 11,
+    "cosmeticFilters": 0
+  },
+  "social": {
+    "networkFilters": 14,
+    "networkRules": 6,
+    "cosmeticFilters": 8
+  },
+  "annoyances": {
+    "networkFilters": 0,
+    "networkRules": 0,
+    "cosmeticFilters": 23
+  }
+}

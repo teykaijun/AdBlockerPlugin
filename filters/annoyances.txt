@@ -1,0 +1,36 @@
+[Adblock Plus 2.0]
+! Title: AdBlocker Plugin – Annoyances
+! Description: Cookie-consent banners, newsletter pop-ups and ad-blocker nags.
+! Off by default: hiding a consent dialog does not dismiss it, so a few sites
+! keep the page locked (no scrolling) until you accept or reject.
+
+! Consent management platforms
+###onetrust-consent-sdk
+###onetrust-banner-sdk
+###CybotCookiebotDialog
+###CybotCookiebotDialogBodyUnderlay
+###usercentrics-root
+###truste-consent-track
+##.truste_overlay
+###didomi-host
+###qc-cmp2-container
+##.qc-cmp2-container
+##[id^="sp_message_container_"]
+##.evidon-banner
+###cookiescript_injected
+
+! Generic cookie notices
+###cookie-law-info-bar
+###cookie-notice
+##.cc-window
+##.cookie-banner
+##.cookie-consent
+
+! Google Funding Choices (consent + "please disable your ad blocker")
+##.fc-consent-root
+##.fc-ab-root
+
+! Newsletter and marketing pop-ups
+##.newsletter-popup
+##.newsletter-modal
+##.pum-overlay
