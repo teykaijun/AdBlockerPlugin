@@ -209,16 +209,24 @@ public class BlockerTests : IDisposable
             c.Upstream = [upstream.Endpoint.ToString()];
             // No downloads during the test.
             c.CommunityLists.Add(new CommunityListSetting { Id = "hagezi-normal", Enabled = false });
+            c.CommunityLists.Add(new CommunityListSetting { Id = "hagezi-popupads", Enabled = false });
         });
 
         var port = TestDns.FreePort();
         var server = new IPEndPoint(IPAddress.Loopback, port);
         var echoed = new List<QueryEvent>();
-        var blocker = new Blocker(_paths, new BlockerOptions { Port = port, ManageSystemDns = false, Echo = e => { lock (echoed) echoed.Add(e); } }, new TestLog());
+        var apiPort = TestDns.FreeTcpPort();
+        var blocker = new Blocker(_paths, new BlockerOptions { Port = port, ApiPort = apiPort, ManageSystemDns = false, Echo = e => { lock (echoed) echoed.Add(e); } }, new TestLog());
 
         using var stopping = new CancellationTokenSource();
         var running = blocker.RunAsync(stopping.Token);
         await WaitUntilAsync(() => blocker.BlockedDomainCount > 0, running);
+
+        using (var http = new HttpClient())
+        {
+            var check = await http.GetStringAsync($"http://127.0.0.1:{apiPort}/v1/check?host=pagead2.googlesyndication.com");
+            Assert.Equal("""{"host":"pagead2.googlesyndication.com","blocked":true}""", check);
+        }
 
         var blocked = await TestDns.QueryUdpAsync(server, DnsMessage.BuildQuery(1, "pagead2.googlesyndication.com", DnsMessage.TypeA));
         Assert.Equal(DnsMessage.RcodeNxDomain, DnsMessage.ResponseCode(blocked));
@@ -255,10 +263,11 @@ public class BlockerTests : IDisposable
         {
             c.Upstream = [$"127.0.0.2:{TestDns.FreePort()}"]; // nothing listens there
             c.CommunityLists.Add(new CommunityListSetting { Id = "hagezi-normal", Enabled = false });
+            c.CommunityLists.Add(new CommunityListSetting { Id = "hagezi-popupads", Enabled = false });
         });
         var port = TestDns.FreePort();
         var log = new TestLog();
-        var blocker = new Blocker(_paths, new BlockerOptions { Port = port, ManageSystemDns = false }, log);
+        var blocker = new Blocker(_paths, new BlockerOptions { Port = port, ApiPort = 0, ManageSystemDns = false }, log);
         using var stopping = new CancellationTokenSource();
         var running = blocker.RunAsync(stopping.Token);
         await WaitUntilAsync(() => blocker.BlockedDomainCount > 0, running);
@@ -277,7 +286,7 @@ public class BlockerTests : IDisposable
         using var taken = new System.Net.Sockets.UdpClient(new IPEndPoint(IPAddress.Loopback, 0));
         var port = ((IPEndPoint)taken.Client.LocalEndPoint!).Port;
         using var takenV6 = new System.Net.Sockets.UdpClient(new IPEndPoint(IPAddress.IPv6Loopback, port));
-        var blocker = new Blocker(_paths, new BlockerOptions { Port = port, ManageSystemDns = false }, new TestLog());
+        var blocker = new Blocker(_paths, new BlockerOptions { Port = port, ApiPort = 0, ManageSystemDns = false }, new TestLog());
         var error = await Assert.ThrowsAsync<UserError>(() => blocker.RunAsync(CancellationToken.None));
         Assert.Contains($"Port {port} is already in use", error.Message);
     }

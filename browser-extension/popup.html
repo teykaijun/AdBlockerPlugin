@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>AdBlocker Companion</title>
+    <link rel="stylesheet" href="popup.css" />
+    <script type="module" src="popup.js"></script>
+  </head>
+  <body>
+    <header>
+      <img src="icons/icon-32.png" width="20" height="20" alt="" />
+      <h1>AdBlocker Companion</h1>
+    </header>
+
+    <p class="status" id="status" data-state="checking">Checking for AdBlocker…</p>
+
+    <dl class="counts">
+      <div><dt>Ad tabs closed</dt><dd id="closed">0</dd></div>
+      <div><dt>Redirects undone</dt><dd id="redirects">0</dd></div>
+    </dl>
+
+    <h2>Recently</h2>
+    <ul id="recent"><li class="empty">Nothing yet.</li></ul>
+
+    <footer>
+      <a href="https://buymeacoffee.com/casunoxd" target="_blank" rel="noopener">Support development ☕</a>
+      <a href="https://github.com/teykaijun/AdBlockerPlugin" target="_blank" rel="noopener">Source code</a>
+    </footer>
+  </body>
+</html>

@@ -78,6 +78,15 @@ internal static class TestDns
         return await DnsTcp.ReadMessageAsync(stream, timeout.Token) ?? throw new IOException("No answer");
     }
 
+    public static int FreeTcpPort()
+    {
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        listener.Stop();
+        return port;
+    }
+
     public static int FreePort()
     {
         using var udp = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);

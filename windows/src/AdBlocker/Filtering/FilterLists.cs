@@ -38,6 +38,8 @@ public sealed class FilterLists(AppPaths paths)
     [
         new("hagezi-normal", "HaGeZi Multi Normal", "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/multi.txt",
             "Recommended. About 180,000 ad, tracker and telemetry domains.", Enabled: true, Custom: false),
+        new("hagezi-popupads", "HaGeZi Pop-Up Ads", "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/popupads.txt",
+            "Recommended. Blocks the scripts that open pop-up ads and redirect pages. About 50,000 domains.", Enabled: true, Custom: false),
         new("hagezi-light", "HaGeZi Multi Light", "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/light.txt",
             "A smaller list with very few false positives.", Enabled: false, Custom: false),
         new("adguard-dns", "AdGuard DNS filter", "https://adguardteam.github.io/HostlistsRegistry/assets/filter_1.txt",

@@ -35,6 +35,12 @@ data class RemoteList(
                 description = "Recommended. About 180,000 ad, tracker and telemetry domains used by apps, games and websites.",
             ),
             RemoteList(
+                id = "hagezi-popupads",
+                title = "HaGeZi Pop-Up Ads",
+                url = "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/popupads.txt",
+                description = "Recommended. Blocks the scripts that open pop-up ads and redirect pages. About 50,000 domains.",
+            ),
+            RemoteList(
                 id = "hagezi-light",
                 title = "HaGeZi Multi Light",
                 url = "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/light.txt",
@@ -55,7 +61,7 @@ data class RemoteList(
         )
 
         /** Community lists that are on until the user turns them off. */
-        val DEFAULT_ENABLED = setOf("hagezi-normal")
+        val DEFAULT_ENABLED = setOf("hagezi-normal", "hagezi-popupads")
     }
 }
 
@@ -124,10 +130,15 @@ class SettingsStore(context: Context) {
 
     /** Brings settings saved by older versions up to date. */
     private fun migrate() {
-        if (prefs.getInt(KEY_VERSION, 1) >= CURRENT_VERSION) return
+        val version = prefs.getInt(KEY_VERSION, 1)
+        if (version >= CURRENT_VERSION) return
+        // Lists that became defaults in a later version are switched on for existing installs too.
+        val added = buildSet {
+            if (version < 2) add("hagezi-normal") // 1.1.0
+            if (version < 3) add("hagezi-popupads") // 1.3.0
+        }
         prefs.edit {
-            // 1.1.0 turns the default community list on, also for existing installs.
-            prefs.getStringSet(KEY_REMOTE_ENABLED, null)?.let { putStringSet(KEY_REMOTE_ENABLED, it + RemoteList.DEFAULT_ENABLED) }
+            prefs.getStringSet(KEY_REMOTE_ENABLED, null)?.let { putStringSet(KEY_REMOTE_ENABLED, it + added) }
             putInt(KEY_VERSION, CURRENT_VERSION)
         }
     }
@@ -167,7 +178,7 @@ class SettingsStore(context: Context) {
     ).toString()
 
     private companion object {
-        const val CURRENT_VERSION = 2
+        const val CURRENT_VERSION = 3
         const val KEY_VERSION = "version"
         const val KEY_PROTECTION_ON = "protection_on"
         const val KEY_BUILTIN = "builtin_lists"

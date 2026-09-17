@@ -1,5 +1,5 @@
-# Builds and tests both apps. Release files are built locally (see README) so the APK
-# keeps one signature; the artifacts here are for checking changes.
+# Builds and tests both apps and the browser companion. Release files are built locally
+# (see README) so the APK keeps one signature; the artifacts here are for checking changes.
 name: CI
 
 on:
@@ -29,6 +29,21 @@ jobs:
         with:
           name: AdBlocker-windows
           path: windows/artifacts/publish/adblocker.exe
+
+  browser-extension:
+    name: Browser companion
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: browser-extension
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Test
+        run: npm test
 
   android:
     name: Android app

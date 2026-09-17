@@ -128,6 +128,7 @@ public class FilterListsTests : IDisposable
         Assert.False(lists.Single(l => l.Id == "hagezi-normal").Enabled);
         Assert.True(lists.Single(l => l.Id == "adguard-dns").Enabled);
         Assert.False(lists.Single(l => l.Id == "stevenblack").Enabled);
+        Assert.True(lists.Single(l => l.Id == "hagezi-popupads").Enabled); // on by default
         var custom = lists.Single(l => l.Custom);
         Assert.Equal(("custom-1", "Mine", true), (custom.Id, custom.Title, custom.Enabled));
         Assert.Throws<ArgumentException>(() => new FilterLists(_paths).CachedFile("..\\evil"));

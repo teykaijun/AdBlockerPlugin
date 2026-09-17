@@ -8,6 +8,7 @@
 <p align="center">
   <a href="https://github.com/teykaijun/AdBlockerPlugin/releases/latest">Download</a> ·
   <a href="#windows">Windows</a> ·
+  <a href="#browser-companion">Browser companion</a> ·
   <a href="#android">Android</a> ·
   <a href="#support">Support development ☕</a>
 </p>
@@ -22,7 +23,7 @@ something stops working, I'd be grateful if you [opened an issue](https://github
 | **What it is** | A console app that runs quietly as a Windows service | An app with a local VPN |
 | **Where it helps** | Chrome, Edge, Firefox and other apps on the PC | Apps, games and browsers on the phone |
 | **How** | Filters DNS lookups on `127.0.0.1` | Filters DNS lookups through a VPN that carries nothing else |
-| **Download** | [`adblocker.exe`](https://github.com/teykaijun/AdBlockerPlugin/releases/latest/download/adblocker.exe) | [`AdBlocker.apk`](https://github.com/teykaijun/AdBlockerPlugin/releases/latest/download/AdBlocker.apk) |
+| **Download** | [`adblocker.exe`](https://github.com/teykaijun/AdBlockerPlugin/releases/latest/download/adblocker.exe), plus the optional [`AdBlocker-Companion.zip`](https://github.com/teykaijun/AdBlockerPlugin/releases/latest/download/AdBlocker-Companion.zip) for Chrome and Edge | [`AdBlocker.apk`](https://github.com/teykaijun/AdBlockerPlugin/releases/latest/download/AdBlocker.apk) |
 
 ## How it works, and what it can't do
 
@@ -43,6 +44,10 @@ This approach has real limits, and I'd rather be upfront about them:
 - Ads served from the **same** servers as the content, such as YouTube video ads or sponsored posts
   inside Facebook and Instagram, can't be told apart from the content and will still show.
 - It can't tidy up the empty space where a blocked ad would have been.
+- It can't stop a page from opening a new tab or sending you somewhere else. The ad then fails to
+  load ("This site can't be reached") but the tab is still there. The HaGeZi Pop-Up Ads list, on by
+  default, blocks many of the scripts that do this, and on Windows the optional
+  [browser companion](#browser-companion) closes those tabs in Chrome and Edge.
 - Apps that use their own encrypted DNS can bypass it (the apps try to warn you about the common cases).
 - Blocklists are never perfect; now and then something useful may get blocked. You can always allow it.
 
@@ -76,6 +81,39 @@ settings back the way they were.
 If you'd rather not install a service, `adblocker run` (as administrator) blocks ads only while that
 console window is open. Ctrl+C or closing the window puts everything back.
 
+### Browser companion
+
+Because AdBlocker works on DNS lookups, a page can still open an ad in a new tab, or send your tab to
+an ad. The ad won't load, but you're left looking at "This site can't be reached". The optional
+**AdBlocker Companion** extension for Chrome, Edge and other Chromium-based browsers tidies this up:
+
+- a tab that a page opens to a blocked address is closed again, and
+- when a page sends your tab to a blocked address, the tab goes back to where you were.
+
+It asks AdBlocker on your PC whether an address is blocked, so it needs AdBlocker for Windows 1.3.0 or
+later to be running, and it does nothing without it. It doesn't block anything itself and doesn't send
+anything anywhere else.
+
+It isn't on the Chrome Web Store, so it's installed as an unpacked extension:
+
+1. Download [`AdBlocker-Companion.zip`](https://github.com/teykaijun/AdBlockerPlugin/releases/latest/download/AdBlocker-Companion.zip)
+   and unzip it to a folder you'll keep (or use the [`browser-extension`](browser-extension) folder
+   from this repository).
+2. Open `chrome://extensions` (in Edge, `edge://extensions`) and turn on **Developer mode**.
+3. Choose **Load unpacked** and pick that folder.
+
+Its toolbar button shows how many ad tabs it has closed and redirects it has undone since the
+browser started. A few things worth knowing:
+
+- If you type a blocked address into a tab you've already used, it takes you back to the previous
+  page. In a new tab you'll see the browser's error page instead, and `adblocker check <domain>`
+  tells you which list blocks it.
+- If a link opens a tab that closes straight away, the link went through a blocked address (often a
+  click tracker). The **Recently** list in the extension's window shows which one, and
+  `adblocker allow <domain>` lets it through.
+- If a page keeps redirecting, it gives up after three tries and leaves the error page.
+- Firefox isn't supported. Its own pop-up blocker, or uBlock Origin, helps there.
+
 ### Commands
 
 Commands marked * need a terminal opened with **Run as administrator**.
@@ -94,7 +132,7 @@ Commands marked * need a terminal opened with **Run as administrator**.
 | `lists add <url> [name]` * / `lists remove <id>` * | Add or remove a list of your own (hosts file or Adblock-style, `https://` only) |
 | `update` * | Download the latest community lists now (they also update weekly on their own) |
 | `dns [server...]` * | Show or choose where allowed lookups go: `auto` (your network's DNS, the default), `cloudflare`, `quad9`, `google` (these three use encrypted DNS over HTTPS), an IP address, or an `https://` DNS-over-HTTPS URL |
-| `doctor` | Look for settings that might let ads slip past |
+| `doctor` | Look for settings that might let ads slip past, and check that the browser companion can reach AdBlocker |
 | `restore` * | Put the original network settings back if AdBlocker was killed and can't restart |
 | `stats reset` * | Set the counters back to zero |
 | `support` | Support development ☕ (opens my Buy Me a Coffee page) |
@@ -142,6 +180,9 @@ Everything is kept in `C:\ProgramData\AdBlocker`, which only administrators and 
   captive portals keep working), with public resolvers as a fallback.
 - New networks (another Wi-Fi, USB tethering) are picked up automatically.
 - Lookups for `use-application-dns.net` are blocked, which asks Firefox to stay on the system DNS.
+- A tiny HTTP endpoint on `127.0.0.1:45353` answers the browser companion's "is this address
+  blocked?" questions (`GET /v1/check?host=…`). It only answers requests addressed to `127.0.0.1` or
+  `localhost`, turns away requests from web pages, and can't change anything.
 
 ## Android
 
@@ -154,7 +195,7 @@ installed from an APK file:
    on your phone (or copy it over) and open it. Android will ask you to allow installing apps from that
    source.
 2. Open **AdBlocker**, tap the power button and accept Android's VPN request. The HaGeZi Multi Normal
-   list downloads in the background and starts blocking a few seconds later.
+   and Pop-Up Ads lists download in the background and start blocking a few seconds later.
 
 A few tips that help:
 
@@ -166,6 +207,20 @@ A few tips that help:
 
 New versions from the Releases page install over older ones. If you built the app yourself, or used
 a build from GitHub Actions, it's signed differently, so uninstall the old copy first.
+
+### Pop-up ad tabs in Chrome
+
+When a page in Chrome opens an ad in a new tab, AdBlocker stops the ad from loading, but the tab still
+opens and shows "This site can't be reached". Chrome on Android doesn't support extensions, so
+unfortunately the browser companion can't close these tabs there. These help:
+
+- The **HaGeZi Pop-Up Ads** list blocks many of the scripts that open these tabs in the first place.
+  It's on by default, and turned on for you when you update to 1.3.0.
+- In Chrome, keep **Settings → Site settings → Pop-ups and redirects** and **Intrusive ads** set to
+  block (the defaults).
+- Pressing Back on a tab that a page opened usually closes it and takes you back to that page.
+- Browsers with their own pop-up blocking, such as Firefox with uBlock Origin, can often stop these
+  tabs from opening at all.
 
 ### Using it
 
@@ -205,6 +260,7 @@ Community lists are downloaded when turned on and refreshed weekly:
 | ID | List | Default |
 | --- | --- | --- |
 | `hagezi-normal` | [HaGeZi Multi Normal](https://github.com/hagezi/dns-blocklists) (about 180,000 domains) | on |
+| `hagezi-popupads` | [HaGeZi Pop-Up Ads](https://github.com/hagezi/dns-blocklists): networks behind pop-up ads and redirects (about 50,000 domains) | on |
 | `hagezi-light` | HaGeZi Multi Light | off |
 | `adguard-dns` | [AdGuard DNS filter](https://github.com/AdguardTeam/AdGuardSDNSFilter) | off |
 | `stevenblack` | [StevenBlack Unified hosts](https://github.com/StevenBlack/hosts) | off |
@@ -238,6 +294,10 @@ windows/                         Windows app (.NET 10)
     Platform/                    Adapter DNS settings, Windows service, browser checks
     Config/                      config.json and file locations
   tests/AdBlocker.Tests/         xUnit tests, including end-to-end runs on a spare port
+browser-extension/               Browser companion for Chrome and Edge (Manifest V3)
+  guard.js                       Decides which tabs to close or send back
+  background.js, api.js          Wires it to the browser and to AdBlocker for Windows
+  test/                          Node tests for guard.js
 android/                         Android app (Kotlin, Jetpack Compose)
   app/src/main/java/com/teykaijun/adblocker/
     dns/  vpn/  data/  ui/
@@ -281,7 +341,15 @@ keyAlias=…
 keyPassword=…
 ```
 
-GitHub Actions builds and tests both apps on every push and keeps the results as downloadable
+### Browser companion extension
+
+There's nothing to build. With Node.js 22 or later, `npm test` in `browser-extension` runs its tests,
+and **Load unpacked** on that folder lets you try changes. The release zip is the same folder without
+`test/` and `package.json`.
+
+### Automated builds and releases
+
+GitHub Actions builds and tests everything on every push and keeps the apps as downloadable
 artifacts. The files on the Releases page are built on my own PC, so that each new APK is signed with
 the same key and can update the previous one.
 
@@ -289,6 +357,14 @@ the same key and can update the previous one.
 
 **Windows:** administrator rights to install the service and change the network adapters' DNS
 settings. The service runs as LocalSystem.
+
+**Browser companion**
+
+| Permission | Why |
+| --- | --- |
+| `webNavigation` (shown as "Read your browsing history") | Notice when a page opens a tab, or a page fails to load |
+| `storage` | Keep the counts in its window until the browser closes |
+| Access to `http://127.0.0.1` | Ask AdBlocker for Windows whether an address is blocked |
 
 **Android**
 
@@ -303,8 +379,9 @@ settings. The service runs as LocalSystem.
 
 Both apps run entirely on your device and don't collect anything. Allowed lookups go to the DNS server
 you chose (by default your network's own). Apart from that, they only go online to download the
-community lists you turned on, from the addresses shown in the app. The support links just open a
-web page in your browser.
+community lists you turned on, from the addresses shown in the app. The browser companion only talks
+to AdBlocker on your own PC and forgets its counts when the browser closes. The support links just
+open a web page in your browser.
 
 ## License
 

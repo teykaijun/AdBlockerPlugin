@@ -22,6 +22,9 @@ public sealed class BlockerOptions
 
     /// <summary>Receives lookups to show (console mode).</summary>
     public Action<QueryEvent>? Echo { get; init; }
+
+    /// <summary>Port of the endpoint the browser companion extension asks; 0 turns it off.</summary>
+    public int ApiPort { get; init; } = LocalApi.DefaultPort;
 }
 
 /// <summary>
@@ -75,6 +78,9 @@ public sealed class Blocker(AppPaths paths, BlockerOptions options, ILog log)
         _servesIPv6 = server.BoundEndpoints.Any(e => e.AddressFamily == AddressFamily.InterNetworkV6);
         log.Info($"Listening for DNS lookups on {string.Join(" and ", server.BoundEndpoints)}.");
 
+        await using var api = options.ApiPort > 0 ? LocalApi.TryStart(options.ApiPort, IsBlocked, log) : null;
+        if (api is not null) log.Info($"Answering the browser companion extension on 127.0.0.1:{api.Port}.");
+
         using var watcher = WatchFiles();
         NetworkAddressChangedEventHandler onNetworkChange = (_, _) => Signal(network: true);
         NetworkChange.NetworkAddressChanged += onNetworkChange;
@@ -125,6 +131,9 @@ public sealed class Blocker(AppPaths paths, BlockerOptions options, ILog log)
         DnsMessage.WriteId(answer, question.Id);
         return answer;
     }
+
+    /// <summary>Whether a host is blocked right now (for the browser companion).</summary>
+    public bool IsBlocked(string host) => _matcher.IsBlocked(host);
 
     private void Reload(bool initial)
     {

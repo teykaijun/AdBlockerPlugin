@@ -15,6 +15,7 @@ namespace AdBlocker.Cli;
 internal static class Commands
 {
     private static readonly AppPaths Paths = AppPaths.Default;
+    private const string CompanionUrl = AppInfo.SourceUrl + "#browser-companion";
 
     public static async Task<int> RunAsync(string[] args)
     {
@@ -176,6 +177,7 @@ internal static class Commands
         StartAndConfirm();
         Terminal.Ok("AdBlocker is blocking ads and will start automatically with Windows.");
         Terminal.Line("Check on it any time with \"adblocker status\". Community lists download in the background.");
+        Terminal.Dim($"Optional: the browser companion closes blocked ad tabs in Chrome and Edge. {CompanionUrl}");
         PrintBrowserProblems();
         return 0;
     }
@@ -393,6 +395,11 @@ internal static class Commands
         if (!live && IsPortTaken(53))
         {
             Problem("Another program is using DNS port 53, so AdBlocker cannot start. Mobile hotspot and Internet Connection Sharing do this.");
+        }
+
+        if (live && !LocalApi.IsAnsweringAsync(LocalApi.DefaultPort).GetAwaiter().GetResult())
+        {
+            Problem($"The browser companion extension can't reach AdBlocker on 127.0.0.1:{LocalApi.DefaultPort}, so it can't close ad tabs. Another program may be using that port.");
         }
 
         if (problems == 0) Terminal.Ok("No problems found.");
@@ -781,6 +788,7 @@ internal static class Commands
               support                Support development ☕ (opens Buy Me a Coffee)
             """);
         Terminal.Dim($"Settings and logs: {Paths.Root}");
+        Terminal.Dim($"Browser companion for Chrome and Edge (closes blocked ad tabs): {CompanionUrl}");
         Terminal.Dim($"Source: {AppInfo.SourceUrl}");
         return 0;
     }
@@ -842,7 +850,6 @@ internal static class Commands
 
     private static bool IsPortTaken(int port) =>
         IPGlobalProperties.GetIPGlobalProperties().GetActiveUdpListeners().Any(e => e.Port == port);
-
     private static bool LaunchedByDoubleClick()
     {
         if (Console.IsInputRedirected || Console.IsOutputRedirected) return false;
