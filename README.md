@@ -46,8 +46,9 @@ This approach has real limits, and I'd rather be upfront about them:
 - It can't tidy up the empty space where a blocked ad would have been.
 - It can't stop a page from opening a new tab or sending you somewhere else. The ad then fails to
   load ("This site can't be reached") but the tab is still there. The HaGeZi Pop-Up Ads list, on by
-  default, blocks many of the scripts that do this, and on Windows the optional
-  [browser companion](#browser-companion) closes those tabs in Chrome and Edge.
+  default, blocks many of the scripts that do this. To close the tabs that still open, there's the
+  optional [browser companion](#browser-companion) for Chrome and Edge on Windows, and the optional
+  [Close blocked pop-up tabs](#pop-up-ad-tabs-in-your-browser) setting on Android.
 - Apps that use their own encrypted DNS can bypass it (the apps try to warn you about the common cases).
 - Blocklists are never perfect; now and then something useful may get blocked. You can always allow it.
 
@@ -208,19 +209,44 @@ A few tips that help:
 New versions from the Releases page install over older ones. If you built the app yourself, or used
 a build from GitHub Actions, it's signed differently, so uninstall the old copy first.
 
-### Pop-up ad tabs in Chrome
+### Pop-up ad tabs in your browser
 
-When a page in Chrome opens an ad in a new tab, AdBlocker stops the ad from loading, but the tab still
-opens and shows "This site can't be reached". Chrome on Android doesn't support extensions, so
-unfortunately the browser companion can't close these tabs there. These help:
+When a page opens an ad in a new tab, or sends your tab to one, AdBlocker stops the ad from loading,
+but the browser still shows "This site can't be reached". Two things help:
 
 - The **HaGeZi Pop-Up Ads** list blocks many of the scripts that open these tabs in the first place.
   It's on by default, and turned on for you when you update to 1.3.0.
-- In Chrome, keep **Settings → Site settings → Pop-ups and redirects** and **Intrusive ads** set to
-  block (the defaults).
-- Pressing Back on a tab that a page opened usually closes it and takes you back to that page.
-- Browsers with their own pop-up blocking, such as Firefox with uBlock Origin, can often stop these
-  tabs from opening at all.
+- The optional **Close blocked pop-up tabs** setting deals with the rest. When the address bar
+  switches to an address AdBlocker blocks, AdBlocker presses Back for you, which closes a tab that a
+  page opened, or returns to the page you were on. A short message shows which address it was.
+
+Chrome on Android doesn't support extensions, so this setting uses Android's accessibility access
+instead. It works with Chrome, Edge, Brave, Vivaldi and Samsung Internet. I've only been able to test
+the logic behind it, not every browser, so please
+[let me know](https://github.com/teykaijun/AdBlockerPlugin/issues) if it misbehaves in yours.
+
+To turn it on, open **Settings → Close blocked pop-up tabs** in AdBlocker. It explains what the access
+is used for, then takes you to Android's accessibility settings, where you pick **AdBlocker: close
+blocked tabs** (under *Downloaded apps* or *Installed apps*) and switch it on. Android asks you to
+confirm, because this kind of access is powerful.
+
+If Android says the setting is **restricted**, that's because the app was installed from a file
+rather than an app store. Open **App info** for AdBlocker (AdBlocker's Settings screen has a link),
+tap **⋮ → Allow restricted settings**, and try again.
+
+A few things worth knowing:
+
+- It only reads the address bar of the browsers above, only acts while protection is on, and doesn't
+  save or share the pages you visit.
+- An address you type or pick in the address bar yourself is left alone, so you still see the
+  browser's error page, and can allow the address from the **Activity** screen if you need it.
+- If a page keeps redirecting, it gives up after a few quick tries and leaves the error page.
+- If Back can't close a tab (for example one you opened yourself), the browser may go to the
+  background instead. AdBlocker then leaves that page alone for half an hour.
+- Browsers can use a little more battery while an app with accessibility access is running.
+
+Chrome's own **Settings → Site settings → Pop-ups and redirects** and **Intrusive ads** (blocked by
+default) help too.
 
 ### Using it
 
@@ -230,7 +256,7 @@ unfortunately the browser companion can't close these tabs there. These help:
 | **Activity** | Browse and search recent lookups; tap one to always allow or block it |
 | **Filters** | Turn lists on or off, add a list by URL, manage your blocked and allowed domains |
 | **Apps** | Let apps skip AdBlocker entirely, handy if one misbehaves |
-| **Settings** | Choose the DNS server, restart behaviour and Always-on VPN, and reset statistics |
+| **Settings** | Close blocked pop-up tabs, choose the DNS server, restart behaviour and Always-on VPN, and reset statistics |
 | **⋮ menu** | Support development ☕, or open the source code |
 
 There's also a Quick Settings tile and a status notification with a **Pause** button.
@@ -243,6 +269,10 @@ There's also a Quick Settings tile and a status notification with a **Pause** bu
   a wake-up pipe. Blocked names are answered straight away; other queries time out after 10 seconds,
   after which the next DNS server is tried.
 - The app excludes itself from its own VPN, so relayed queries and list downloads can't loop back in.
+- `TabCloserService` is an accessibility service that only receives events from the supported
+  browsers. It reads the address bar by its view id, checks the host against the same rules the VPN
+  uses, and performs the system Back action. The decisions (act once per address, leave typed
+  addresses alone, stop on redirect loops) live in `TabGuard`, which has its own unit tests.
 
 ## Filter lists
 
@@ -301,7 +331,8 @@ browser-extension/               Browser companion for Chrome and Edge (Manifest
 android/                         Android app (Kotlin, Jetpack Compose)
   app/src/main/java/com/teykaijun/adblocker/
     dns/  vpn/  data/  ui/
-  app/src/test/                  JUnit tests for the DNS code
+    tabs/                        Optional "Close blocked pop-up tabs" accessibility service
+  app/src/test/                  JUnit tests for the DNS code and the tab closer's decisions
 ```
 
 ## Building it yourself
@@ -374,14 +405,16 @@ settings. The service runs as LocalSystem.
 | `INTERNET`, `ACCESS_NETWORK_STATE` | Pass on allowed lookups, download lists you turn on, notice network changes |
 | `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_SPECIAL_USE`, `POST_NOTIFICATIONS` | Keep filtering running and show its status notification |
 | `RECEIVE_BOOT_COMPLETED` | Turn protection back on after a restart or an update |
+| Accessibility access (optional, off until you switch it on) | **Close blocked pop-up tabs**: read supported browsers' address bars and press Back |
 
 ## Privacy
 
 Both apps run entirely on your device and don't collect anything. Allowed lookups go to the DNS server
 you chose (by default your network's own). Apart from that, they only go online to download the
 community lists you turned on, from the addresses shown in the app. The browser companion only talks
-to AdBlocker on your own PC and forgets its counts when the browser closes. The support links just
-open a web page in your browser.
+to AdBlocker on your own PC and forgets its counts when the browser closes. On Android, **Close
+blocked pop-up tabs** only looks at browsers' address bars on the phone and keeps nothing but a count
+and the latest blocked address, in memory. The support links just open a web page in your browser.
 
 ## License
 

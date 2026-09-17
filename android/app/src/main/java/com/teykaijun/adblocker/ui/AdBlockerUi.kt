@@ -22,9 +22,11 @@ import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.teykaijun.adblocker.R
 import com.teykaijun.adblocker.app
+import com.teykaijun.adblocker.tabs.TabCloser
 import com.teykaijun.adblocker.vpn.VpnController
 import com.teykaijun.adblocker.vpn.VpnState
 
@@ -54,10 +56,19 @@ fun AdBlockerUi(onStartProtection: () -> Unit, onStopProtection: () -> Unit) {
     val recent by app.stats.recent.collectAsStateWithLifecycle()
     val network by app.network.snapshot.collectAsStateWithLifecycle()
     val listStatus by app.filters.status.collectAsStateWithLifecycle()
+    val tabCloserRunning by TabCloser.running.collectAsStateWithLifecycle()
+    val tabCloserStats by TabCloser.stats.collectAsStateWithLifecycle()
+    var tabCloserEnabled by remember { mutableStateOf(TabCloser.isEnabled(app)) }
     var tab by rememberSaveable { mutableStateOf(Tab.Home) }
 
     // Counters are otherwise only published while the VPN runs.
     LaunchedEffect(Unit) { app.stats.publish() }
+    // The user switches the tab closer on or off in Android's settings, then comes back.
+    LaunchedEffect(tabCloserRunning) { tabCloserEnabled = TabCloser.isEnabled(app) }
+    LifecycleResumeEffect(Unit) {
+        tabCloserEnabled = TabCloser.isEnabled(app)
+        onPauseOrDispose {}
+    }
 
     Scaffold(
         bottomBar = {
@@ -109,6 +120,8 @@ fun AdBlockerUi(onStartProtection: () -> Unit, onStopProtection: () -> Unit) {
                 Tab.Settings -> SettingsScreen(
                     settings = settings,
                     totals = totals,
+                    tabCloserOn = tabCloserRunning || tabCloserEnabled,
+                    tabCloserStats = tabCloserStats,
                     onUpdateSettings = app.settings::update,
                     onResetStats = app.stats::reset,
                 )

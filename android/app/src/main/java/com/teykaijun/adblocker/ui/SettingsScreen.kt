@@ -31,17 +31,22 @@ import com.teykaijun.adblocker.data.DnsProvider
 import com.teykaijun.adblocker.data.Settings
 import com.teykaijun.adblocker.data.Totals
 import com.teykaijun.adblocker.data.parseIpLiteral
+import com.teykaijun.adblocker.tabs.TabCloser
+import com.teykaijun.adblocker.tabs.TabCloserStats
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     settings: Settings,
     totals: Totals,
+    tabCloserOn: Boolean,
+    tabCloserStats: TabCloserStats,
     onUpdateSettings: ((Settings) -> Settings) -> Unit,
     onResetStats: () -> Unit,
 ) {
     val context = LocalContext.current
     var confirmReset by remember { mutableStateOf(false) }
+    var explainTabCloser by remember { mutableStateOf(false) }
     var customDns by rememberSaveable { mutableStateOf(settings.customDns) }
 
     Scaffold(
@@ -77,6 +82,34 @@ fun SettingsScreen(
                     },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                )
+            }
+
+            SectionHeader("Pop-up tabs", "Chrome, Edge, Brave, Vivaldi and Samsung Internet")
+            SwitchRow(
+                title = "Close blocked pop-up tabs",
+                body = "When a page opens a tab or redirects to an address AdBlocker blocks, press Back for me. " +
+                    "Works while protection is on.",
+                checked = tabCloserOn,
+                meta = tabCloserStats.latestHost?.let { host ->
+                    val count = tabCloserStats.count
+                    "Left ${formatCount(count)} blocked ${if (count == 1) "page" else "pages"}. " +
+                        "Latest: $host, ${relativeTime(tabCloserStats.latestTime)}."
+                },
+                onCheckedChange = { on ->
+                    if (on) {
+                        explainTabCloser = true
+                    } else if (!TabCloser.turnOff()) {
+                        // Switched on but not running; only Android's settings can switch it off then.
+                        context.openSystemSettings(AndroidSettings.ACTION_ACCESSIBILITY_SETTINGS)
+                    }
+                },
+            )
+            if (!tabCloserOn) {
+                ClickRow(
+                    title = "Android says the setting is restricted?",
+                    body = "Open App info, tap ⋮ and choose “Allow restricted settings”, then switch it on again.",
+                    onClick = { context.openAppInfo() },
                 )
             }
 
@@ -116,6 +149,8 @@ fun SettingsScreen(
                 "• Private DNS set to a hostname, or Chrome's “Use secure DNS” set to a specific provider, skips " +
                     "AdBlocker. Keep them on Automatic.\n" +
                     "• Ads served from the same domain as the content, like YouTube video ads, cannot be blocked by DNS.\n" +
+                    "• Without “Close blocked pop-up tabs”, a tab that a page opens to a blocked address stays open " +
+                    "and shows “This site can't be reached”.\n" +
                     "• Only one VPN app can run at a time.",
             )
 
@@ -128,6 +163,30 @@ fun SettingsScreen(
             )
             ClickRow(title = "Source code", body = AppLinks.SOURCE.removePrefix("https://"), onClick = { context.openUrl(AppLinks.SOURCE) })
         }
+    }
+
+    if (explainTabCloser) {
+        AlertDialog(
+            onDismissRequest = { explainTabCloser = false },
+            title = { Text("Close blocked pop-up tabs?") },
+            text = {
+                Text(
+                    "When a page in your browser opens a tab or redirects to an address AdBlocker blocks, AdBlocker " +
+                        "presses Back for you. The browser then closes that tab or returns to the page you were on, " +
+                        "and a short message tells you which address it was.\n\n" +
+                        "This needs Android's accessibility access. AdBlocker only reads the address bar of the " +
+                        "browsers listed, only while protection is on, and doesn't save or share the pages you visit.\n\n" +
+                        "On the next screen, find AdBlocker (under Downloaded or Installed apps) and switch it on.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    explainTabCloser = false
+                    context.openSystemSettings(AndroidSettings.ACTION_ACCESSIBILITY_SETTINGS)
+                }) { Text("Continue") }
+            },
+            dismissButton = { TextButton(onClick = { explainTabCloser = false }) { Text("Not now") } },
+        )
     }
 
     if (confirmReset) {

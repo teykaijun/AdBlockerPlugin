@@ -79,6 +79,21 @@
                 android:value="true" />
         </service>
 
+        <!-- Optional, off until the user turns it on in Android's accessibility settings.
+             Only the system can bind it, thanks to BIND_ACCESSIBILITY_SERVICE. -->
+        <service
+            android:name=".tabs.TabCloserService"
+            android:exported="true"
+            android:label="@string/tab_closer_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/tab_closer_service" />
+        </service>
+
         <receiver
             android:name=".vpn.BootReceiver"
             android:exported="true">

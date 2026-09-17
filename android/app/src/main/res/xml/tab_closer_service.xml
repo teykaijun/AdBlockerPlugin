@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Only browsers' events are delivered; keep packageNames in sync with Browsers.ADDRESS_BARS. -->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged|typeViewFocused|typeViewTextChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagReportViewIds"
+    android:canRetrieveWindowContent="true"
+    android:description="@string/tab_closer_description"
+    android:isAccessibilityTool="false"
+    android:notificationTimeout="200"
+    android:packageNames="com.android.chrome,com.chrome.beta,com.chrome.dev,com.chrome.canary,com.microsoft.emmx,com.brave.browser,com.vivaldi.browser,com.sec.android.app.sbrowser"
+    android:settingsActivity="com.teykaijun.adblocker.MainActivity"
+    android:summary="@string/tab_closer_summary"
+    tools:ignore="UnusedAttribute" />

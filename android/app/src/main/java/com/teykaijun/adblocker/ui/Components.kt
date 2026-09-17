@@ -205,6 +205,18 @@ fun Context.openSystemSettings(vararg actions: String) {
     }
 }
 
+/** Opens AdBlocker's App info page in Android's settings. */
+fun Context.openAppInfo() {
+    try {
+        startActivity(
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, "package:$packageName".toUri())
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+    } catch (e: ActivityNotFoundException) {
+        openSystemSettings()
+    }
+}
+
 fun Context.openUrl(url: String) {
     try {
         startActivity(Intent(Intent.ACTION_VIEW, url.toUri()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))

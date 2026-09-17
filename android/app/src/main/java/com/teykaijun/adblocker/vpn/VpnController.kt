@@ -2,6 +2,7 @@ package com.teykaijun.adblocker.vpn
 
 import android.content.Context
 import androidx.core.content.ContextCompat
+import com.teykaijun.adblocker.dns.DomainMatcher
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -20,6 +21,11 @@ object VpnController {
 
     val isActive: Boolean
         get() = state.value.let { it is VpnState.Running || it is VpnState.Starting }
+
+    /** The rules the running VPN answers with, or null while it isn't running. The tab closer reads them. */
+    @Volatile
+    var matcher: DomainMatcher? = null
+        internal set
 
     internal fun setState(state: VpnState) {
         mutableState.value = state

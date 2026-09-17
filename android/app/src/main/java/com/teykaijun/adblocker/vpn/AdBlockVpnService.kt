@@ -135,6 +135,7 @@ class AdBlockVpnService : VpnService() {
 
         val newProxy = DnsProxy(newTunnel.fileDescriptor, { socket -> protect(socket) }, app.stats::record)
         newProxy.matcher = matcher
+        VpnController.matcher = matcher
         newProxy.network = app.network.snapshot.value.network
         newProxy.upstreamServers = upstreamServers(settings)
         proxy = newProxy
@@ -158,7 +159,10 @@ class AdBlockVpnService : VpnService() {
             .drop(1)
             .collectLatest {
                 val matcher = app.filters.buildMatcher(app.settings.settings.value)
-                proxy?.matcher = matcher
+                proxy?.let {
+                    it.matcher = matcher
+                    VpnController.matcher = matcher
+                }
             }
     }
 
@@ -231,6 +235,8 @@ class AdBlockVpnService : VpnService() {
     }
 
     private fun releaseTunnel() {
+        // establish() sets it again when it replaces the tunnel.
+        VpnController.matcher = null
         proxy?.stop()
         proxy = null
         proxyThread?.join(1_000)

@@ -5,4 +5,7 @@
     <string name="channel_status_description">Shows that AdBlocker is filtering and how much it blocked today.</string>
     <string name="channel_problems">Problems</string>
     <string name="channel_problems_description">Tells you when AdBlocker had to stop.</string>
+    <string name="tab_closer_label">AdBlocker: close blocked tabs</string>
+    <string name="tab_closer_summary">Closes pop-up ad tabs in your browser</string>
+    <string name="tab_closer_description">When a page in Chrome, Edge, Brave, Vivaldi or Samsung Internet opens a tab or redirects to an address AdBlocker blocks, AdBlocker presses Back for you. The browser then closes that tab or returns to the page you were on.\n\nAdBlocker only reads the browser\'s address bar, only while its protection is on, and doesn\'t save or share the pages you visit.</string>
 </resources>
