@@ -61,7 +61,7 @@ fun AppsScreen(bypassApps: Set<String>, onToggle: (packageName: String, bypass: 
     var query by rememberSaveable { mutableStateOf("") }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Apps") }) },
+        topBar = { TopAppBar(title = { Text("Apps") }, actions = { AppMenu() }) },
         contentWindowInsets = WindowInsets(0),
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {

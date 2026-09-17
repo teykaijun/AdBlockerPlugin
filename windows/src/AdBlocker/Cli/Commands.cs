@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Net.NetworkInformation;
 using System.Runtime.InteropServices;
@@ -53,6 +54,7 @@ internal static class Commands
                 "log" => await Log(rest),
                 "stats" when rest.FirstOrDefault() == "reset" => ResetStats(),
                 "doctor" => Doctor(rest),
+                "support" => Support(rest),
                 "help" or "--help" or "-h" or "/?" => Help(),
                 "version" or "--version" => Version(),
                 _ => throw new UserError($"Unknown command \"{args[0]}\". Run \"adblocker help\" to see what is available."),
@@ -263,6 +265,7 @@ internal static class Commands
         PrintProtectionState();
         Terminal.Line();
         Terminal.Line("Run \"adblocker help\" for all commands, or \"adblocker install\" (as administrator) to start blocking.");
+        Terminal.Dim($"Support development ☕  {AppInfo.SupportUrl}");
 
         if (LaunchedByDoubleClick())
         {
@@ -773,9 +776,31 @@ internal static class Commands
               doctor                 Look for settings that let ads slip past AdBlocker
               restore *              Put the original network settings back after a crash
               stats reset *          Set the counters back to zero
+
+            More
+              support                Support development ☕ (opens Buy Me a Coffee)
             """);
         Terminal.Dim($"Settings and logs: {Paths.Root}");
         Terminal.Dim($"Source: {AppInfo.SourceUrl}");
+        return 0;
+    }
+
+    private static int Support(string[] args)
+    {
+        new Arguments(args, [], []).NoMoreThan(0);
+        Terminal.Line("Thank you for thinking of it! You can buy me a coffee here:");
+        Terminal.Heading($"  {AppInfo.SupportUrl}");
+
+        // An elevated terminal would start the browser with administrator rights; just show the link then.
+        if (Elevation.IsAdministrator) return 0;
+        try
+        {
+            Process.Start(new ProcessStartInfo(AppInfo.SupportUrl) { UseShellExecute = true })?.Dispose();
+        }
+        catch (Exception e) when (e is System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            Terminal.Dim("Could not open a browser; copy the link above instead.");
+        }
         return 0;
     }
 

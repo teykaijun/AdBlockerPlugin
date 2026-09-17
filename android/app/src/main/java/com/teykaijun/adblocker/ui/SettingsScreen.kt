@@ -32,8 +32,6 @@ import com.teykaijun.adblocker.data.Settings
 import com.teykaijun.adblocker.data.Totals
 import com.teykaijun.adblocker.data.parseIpLiteral
 
-private const val SOURCE_URL = "https://github.com/teykaijun/AdBlockerPlugin"
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
@@ -47,7 +45,7 @@ fun SettingsScreen(
     var customDns by rememberSaveable { mutableStateOf(settings.customDns) }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Settings") }) },
+        topBar = { TopAppBar(title = { Text("Settings") }, actions = { AppMenu() }) },
         contentWindowInsets = WindowInsets(0),
     ) { padding ->
         Column(Modifier.padding(padding).verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
@@ -123,7 +121,12 @@ fun SettingsScreen(
 
             SectionHeader("About")
             ClickRow(title = "Version", body = BuildConfig.VERSION_NAME, onClick = {})
-            ClickRow(title = "Source code", body = SOURCE_URL.removePrefix("https://"), onClick = { context.openUrl(SOURCE_URL) })
+            ClickRow(
+                title = "Support development ☕",
+                body = "If AdBlocker is useful to you, you can buy me a coffee.",
+                onClick = { context.openUrl(AppLinks.SUPPORT) },
+            )
+            ClickRow(title = "Source code", body = AppLinks.SOURCE.removePrefix("https://"), onClick = { context.openUrl(AppLinks.SOURCE) })
         }
     }
 

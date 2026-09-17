@@ -68,7 +68,7 @@ fun FiltersScreen(
     var dialog by remember { mutableStateOf<FiltersDialog?>(null) }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Filters") }) },
+        topBar = { TopAppBar(title = { Text("Filters") }, actions = { AppMenu() }) },
         contentWindowInsets = WindowInsets(0),
     ) { padding ->
         LazyColumn(Modifier.padding(padding).fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {

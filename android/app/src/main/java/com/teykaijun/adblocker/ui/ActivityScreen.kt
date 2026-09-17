@@ -88,6 +88,7 @@ fun ActivityScreen(
                     IconButton(onClick = onClear, enabled = events.isNotEmpty()) {
                         Icon(Icons.Filled.Delete, contentDescription = "Clear activity")
                     }
+                    AppMenu()
                 },
             )
         },

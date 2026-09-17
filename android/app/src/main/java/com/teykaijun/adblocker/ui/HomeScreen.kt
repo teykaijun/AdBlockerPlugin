@@ -62,7 +62,7 @@ fun HomeScreen(
 ) {
     val context = LocalContext.current
     Scaffold(
-        topBar = { TopAppBar(title = { Text("AdBlocker") }) },
+        topBar = { TopAppBar(title = { Text("AdBlocker") }, actions = { AppMenu() }) },
         contentWindowInsets = WindowInsets(0),
     ) { padding ->
         Column(
