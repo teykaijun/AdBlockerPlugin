@@ -1,29 +1,14 @@
-[Adblock Plus 2.0]
-! Title: AdBlocker Plugin – Social widgets
-! Description: Share buttons, like buttons and embedded social widgets.
-! Off by default: blocking these can break "Log in with Facebook" and
-! embedded posts.
+! Title: AdBlocker – Social widgets
+! Share buttons, like buttons and embedded social widgets.
+! Off by default: blocking these breaks "Log in with Facebook" on websites
+! and embedded posts.
 
 ||connect.facebook.net^
-||facebook.com/plugins/
 ||platform.twitter.com^
 ||syndication.twitter.com^
 ||platform.linkedin.com^
-||instagram.com/embed.js
-||tiktok.com/embed.js
-||assets.pinterest.com/js/pinit
-||vk.com/js/api/openapi.js
 ||addthis.com^
 ||addtoany.com^
 ||sharethis.com^
 ||shareaholic.com^
 ||sumo.com^
-
-##.addthis_toolbox
-##.addthis_inline_share_toolbox
-##.a2a_kit
-##.sharethis-inline-share-buttons
-##.shareaholic-canvas
-##.fb-like
-##.fb-share-button
-##.twitter-share-button

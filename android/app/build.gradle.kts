@@ -25,8 +25,16 @@ android {
         minSdk = 26
         // Android 16 is the newest release whose behaviour changes this app was checked against.
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.1.0"
+    }
+
+    // The built-in blocklists are shared with the Windows app and live in the
+    // repository's filters/ folder; they are packaged as assets as-is.
+    sourceSets {
+        getByName("main") {
+            assets.directories.add("../../filters")
+        }
     }
 
     signingConfigs {

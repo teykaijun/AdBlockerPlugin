@@ -157,7 +157,7 @@ private fun PowerButton(state: VpnState, onClick: () -> Unit) {
 @Composable
 private fun StatusText(state: VpnState) {
     val (title, detail) = when (state) {
-        is VpnState.Running -> "Protection is on" to "Ads and trackers are blocked in apps and browsers."
+        is VpnState.Running -> "Protection is on" to "Ads and trackers are blocked in apps, games and browsers."
         VpnState.Starting -> "Starting…" to "Loading your filter lists."
         is VpnState.Failed -> "Protection is off" to "Tap the button to try again."
         VpnState.Stopped -> "Protection is off" to "Tap the button to start blocking."

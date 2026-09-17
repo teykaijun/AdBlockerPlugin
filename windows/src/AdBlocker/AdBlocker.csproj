@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>adblocker</AssemblyName>
+    <RootNamespace>AdBlocker</RootNamespace>
+    <Description>Blocks ads and trackers for the whole PC by filtering DNS lookups.</Description>
+  </PropertyGroup>
+
+  <!-- `dotnet publish -r win-x64` produces a single self-contained adblocker.exe. -->
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' != ''">
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <PublishTrimmed>true</PublishTrimmed>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <DebugType>none</DebugType>
+  </PropertyGroup>
+
+  <!-- The built-in blocklists are shared with the Android app. -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\..\filters\*.txt;..\..\..\filters\lists.json"
+                      LogicalName="filters/%(Filename)%(Extension)"
+                      Link="filters\%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.ServiceProcess.ServiceController" Version="10.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="AdBlocker.Tests" />
+  </ItemGroup>
+
+</Project>

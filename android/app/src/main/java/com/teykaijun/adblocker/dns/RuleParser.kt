@@ -18,7 +18,6 @@ object RuleParser {
     private val WHITESPACE = Regex("""\s+""")
     private val COSMETIC = Regex("""#[@?%$]?#""")
     private val IPV4 = Regex("""^\d{1,3}(\.\d{1,3}){3}$""")
-    private val HOSTNAME = Regex("""^(?=.{1,253}$)[a-z0-9_]([a-z0-9_-]{0,61}[a-z0-9_])?(\.[a-z0-9_]([a-z0-9_-]{0,61}[a-z0-9_])?)+$""")
 
     /** Hostnames that hosts files map for the local machine, never ad servers. */
     private val IGNORED = setOf(
@@ -74,8 +73,28 @@ object RuleParser {
     /** Lower-cased hostname with at least two labels, or null if `input` is not one. */
     fun normalizeDomain(input: String): String? {
         val domain = input.trim().trimEnd('.').lowercase()
-        if (domain in IGNORED || !HOSTNAME.matches(domain) || IPV4.matches(domain)) return null
+        if (domain in IGNORED || !isHostname(domain) || IPV4.matches(domain)) return null
         return domain
+    }
+
+    // Hand-written instead of a regex: community lists have hundreds of
+    // thousands of lines and this runs for each of them.
+    private fun isHostname(name: String): Boolean {
+        if (name.isEmpty() || name.length > 253) return false
+        var labels = 0
+        var start = 0
+        for (i in 0..name.length) {
+            if (i == name.length || name[i] == '.') {
+                val length = i - start
+                if (length == 0 || length > 63 || name[start] == '-' || name[i - 1] == '-') return false
+                labels++
+                start = i + 1
+            } else {
+                val c = name[i]
+                if (c !in 'a'..'z' && c !in '0'..'9' && c != '-' && c != '_') return false
+            }
+        }
+        return labels >= 2
     }
 
     private fun isAddress(token: String) = token == "0" || IPV4.matches(token) || ':' in token

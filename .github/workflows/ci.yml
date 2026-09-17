@@ -5,16 +5,39 @@ on:
   pull_request:
 
 jobs:
-  extension:
-    name: Chrome extension and filter lists
-    runs-on: ubuntu-latest
+  windows:
+    name: Windows app
+    runs-on: windows-latest
+    permissions:
+      contents: write # only used to attach the exe to a release on v* tags
+    defaults:
+      run:
+        working-directory: windows
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-dotnet@v4
         with:
-          node-version: 22
-      # Includes a check that the generated rulesets and Android assets match filters/*.txt.
-      - run: npm test
+          dotnet-version: 10.0.x
+
+      - name: Test
+        run: dotnet test AdBlocker.slnx
+
+      - name: Publish adblocker.exe
+        run: dotnet publish src/AdBlocker/AdBlocker.csproj -c Release -r win-x64 -o artifacts/publish
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AdBlocker-windows
+          path: windows/artifacts/publish/adblocker.exe
+
+      - name: Attach the exe to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --generate-notes
+          gh release upload "$GITHUB_REF_NAME" artifacts/publish/adblocker.exe --clobber
 
   android:
     name: Android app
@@ -58,4 +81,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           cp app/build/outputs/apk/release/app-release.apk "AdBlocker-${GITHUB_REF_NAME}.apk"
-          gh release create "$GITHUB_REF_NAME" "AdBlocker-${GITHUB_REF_NAME}.apk" --generate-notes
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --generate-notes
+          gh release upload "$GITHUB_REF_NAME" "AdBlocker-${GITHUB_REF_NAME}.apk" --clobber

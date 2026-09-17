@@ -29,16 +29,16 @@ data class RemoteList(
     companion object {
         val PRESETS = listOf(
             RemoteList(
-                id = "hagezi-light",
-                title = "HaGeZi Multi Light",
-                url = "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/light.txt",
-                description = "Ads, trackers and telemetry. Very few false positives.",
-            ),
-            RemoteList(
                 id = "hagezi-normal",
                 title = "HaGeZi Multi Normal",
                 url = "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/multi.txt",
-                description = "Broader protection with a small risk of breaking something.",
+                description = "Recommended. About 180,000 ad, tracker and telemetry domains used by apps, games and websites.",
+            ),
+            RemoteList(
+                id = "hagezi-light",
+                title = "HaGeZi Multi Light",
+                url = "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/light.txt",
+                description = "A smaller list for older phones. Very few false positives.",
             ),
             RemoteList(
                 id = "adguard-dns",
@@ -53,6 +53,9 @@ data class RemoteList(
                 description = "Popular hosts file covering ads and malware.",
             ),
         )
+
+        /** Community lists that are on until the user turns them off. */
+        val DEFAULT_ENABLED = setOf("hagezi-normal")
     }
 }
 
@@ -61,7 +64,7 @@ data class Settings(
     val protectionOn: Boolean = false,
     /** Built-in list toggles the user changed; missing ids use the list default. */
     val builtInLists: Map<String, Boolean> = emptyMap(),
-    val remoteLists: List<RemoteList> = RemoteList.PRESETS,
+    val remoteLists: List<RemoteList> = RemoteList.PRESETS.map { it.copy(enabled = it.id in RemoteList.DEFAULT_ENABLED) },
     val blockedDomains: Set<String> = emptySet(),
     val allowedDomains: Set<String> = emptySet(),
     /** Packages that bypass the VPN entirely. */
@@ -99,7 +102,8 @@ class SettingsStore(context: Context) {
     }
 
     private fun read(): Settings {
-        val enabledRemote = prefs.getStringSet(KEY_REMOTE_ENABLED, emptySet()).orEmpty()
+        migrate()
+        val enabledRemote = prefs.getStringSet(KEY_REMOTE_ENABLED, null) ?: RemoteList.DEFAULT_ENABLED
         val custom = parseCustomLists(prefs.getString(KEY_CUSTOM_LISTS, null))
         val remote = (RemoteList.PRESETS + custom).map { it.copy(enabled = it.id in enabledRemote) }
         val builtIn = prefs.getStringSet(KEY_BUILTIN, emptySet()).orEmpty().mapNotNull { entry ->
@@ -116,6 +120,16 @@ class SettingsStore(context: Context) {
             customDns = prefs.getString(KEY_CUSTOM_DNS, "").orEmpty(),
             startOnBoot = prefs.getBoolean(KEY_START_ON_BOOT, true),
         )
+    }
+
+    /** Brings settings saved by older versions up to date. */
+    private fun migrate() {
+        if (prefs.getInt(KEY_VERSION, 1) >= CURRENT_VERSION) return
+        prefs.edit {
+            // 1.1.0 turns the default community list on, also for existing installs.
+            prefs.getStringSet(KEY_REMOTE_ENABLED, null)?.let { putStringSet(KEY_REMOTE_ENABLED, it + RemoteList.DEFAULT_ENABLED) }
+            putInt(KEY_VERSION, CURRENT_VERSION)
+        }
     }
 
     private fun write(s: Settings) {
@@ -153,6 +167,8 @@ class SettingsStore(context: Context) {
     ).toString()
 
     private companion object {
+        const val CURRENT_VERSION = 2
+        const val KEY_VERSION = "version"
         const val KEY_PROTECTION_ON = "protection_on"
         const val KEY_BUILTIN = "builtin_lists"
         const val KEY_REMOTE_ENABLED = "remote_enabled"

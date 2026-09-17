@@ -72,7 +72,7 @@ fun FiltersScreen(
         contentWindowInsets = WindowInsets(0),
     ) { padding ->
         LazyColumn(Modifier.padding(padding).fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
-            item { SectionHeader("Built-in lists", "Bundled with the app. The same lists the Chrome extension uses.") }
+            item { SectionHeader("Built-in lists", "Bundled with the app and shared with AdBlocker for Windows.") }
             items(builtIn, key = { "builtin-${it.id}" }) { list ->
                 SwitchRow(
                     title = list.title,
@@ -86,7 +86,7 @@ fun FiltersScreen(
             item {
                 SectionHeader(
                     "Community lists",
-                    "Much larger lists. Turning one on downloads it from the address shown; it then updates weekly.",
+                    "Much larger lists that catch far more ads in apps and games. They download from the address shown and update weekly.",
                 )
             }
             items(settings.remoteLists, key = { "remote-${it.id}" }) { list ->

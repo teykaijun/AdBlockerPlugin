@@ -100,16 +100,30 @@ class RuleParserTest {
     }
 
     @Test
-    fun `reads every bundled list`() {
-        val assets = File("src/main/assets/filters")
-        val lists = assets.listFiles { f -> f.extension == "txt" }.orEmpty()
-        assertTrue("no bundled lists found in ${assets.absolutePath}", lists.isNotEmpty())
+    fun `reads every shared list without errors or duplicates`() {
+        // The app packages the repository's filters/ folder as its assets.
+        val dir = File("../../filters")
+        val lists = dir.listFiles { f -> f.extension == "txt" }.orEmpty()
+        assertTrue("no lists found in ${dir.absolutePath}", lists.isNotEmpty())
         for (file in lists) {
+            val lines = file.readLines()
+            val rules = lines.filter { it.isNotBlank() && !it.startsWith("!") }
+            for (rule in rules) {
+                assertTrue("${file.name}: \"$rule\" should be ||domain^ or @@||domain^", rule.matches(Regex("""(@@)?\|\|[a-z0-9.-]+\^""")))
+            }
             val blocked = mutableSetOf<String>()
             val allowed = mutableSetOf<String>()
-            RuleParser.parseInto(file.readLines().asSequence(), blocked, allowed)
-            val expected = file.readLines().count { it.isNotBlank() && !it.startsWith("#") && !it.startsWith("@@") }
-            assertEquals("every domain in ${file.name} should parse", expected, blocked.size)
+            RuleParser.parseInto(lines.asSequence(), blocked, allowed)
+            assertEquals("${file.name}: every rule should parse once", rules.size, blocked.size + allowed.size)
         }
+    }
+
+    @Test
+    fun `describes every shared list in lists json`() {
+        val dir = File("../../filters")
+        val index = dir.resolve("lists.json").readText()
+        val ids = Regex(""""id"\s*:\s*"([^"]+)"""").findAll(index).map { it.groupValues[1] }.toSet()
+        val files = dir.listFiles { f -> f.extension == "txt" }.orEmpty().map { it.nameWithoutExtension }.toSet()
+        assertEquals(files, ids)
     }
 }

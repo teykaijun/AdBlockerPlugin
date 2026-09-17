@@ -1,7 +1,7 @@
-[Adblock Plus 2.0]
-! Title: AdBlocker Plugin – Ads
-! Description: Ad servers, ad exchanges and ad placeholders.
-! Syntax: see README.md → "Filter syntax". Compiled by `npm run build`.
+! Title: AdBlocker – Ads
+! Ad servers, ad exchanges and in-app ad SDKs.
+! One rule per line: ||domain^ blocks the domain and all of its subdomains,
+! @@||domain^ is an exception. Lines starting with ! are comments.
 
 ! ---------------------------------------------------------------------------
 ! Google
@@ -10,7 +10,17 @@
 ||googlesyndication.com^
 ||googleadservices.com^
 ||googletagservices.com^
+||adtrafficquality.google^
 ||adservice.google.com^
+||adservice.google.ca^
+||adservice.google.co.in^
+||adservice.google.co.jp^
+||adservice.google.co.uk^
+||adservice.google.com.au^
+||adservice.google.com.my^
+||adservice.google.com.sg^
+||adservice.google.de^
+||adservice.google.fr^
 
 ! ---------------------------------------------------------------------------
 ! Exchanges, SSPs and DSPs
@@ -50,7 +60,6 @@
 ||rhythmone.com^
 ||rubiconproject.com^
 ||sharethrough.com^
-||smaato.net^
 ||smartadserver.com^
 ||smartclip.net^
 ||sovrn.com^
@@ -108,12 +117,11 @@
 ||trafficstars.com^
 
 ! ---------------------------------------------------------------------------
-! In-app ad SDKs (these matter most for the Android app)
+! In-app and in-game ad SDKs
 ! ---------------------------------------------------------------------------
 ||adcolony.com^
 ||adfox.ru^
 ||adsmoloco.com^
-||adtrafficquality.google^
 ||an.facebook.com^
 ||an.yandex.ru^
 ||applovin.com^
@@ -133,6 +141,7 @@
 ||pglstatp-toutiao.com^
 ||pubnative.net^
 ||rayjump.com^
+||smaato.net^
 ||startappservice.com^
 ||supersonicads.com^
 ||tapjoy.com^
@@ -142,66 +151,8 @@
 ||yandexadexchange.net^
 
 ! ---------------------------------------------------------------------------
-! Generic URL patterns
+! Portal and desktop app ads
 ! ---------------------------------------------------------------------------
-/adsbygoogle.js$script
-/prebid*.js$script
-/adserver/*$third-party
-/banner_ads/*$image
-/ad_banner_*$image
-
-! ---------------------------------------------------------------------------
-! Element hiding – generic
-! ---------------------------------------------------------------------------
-##.adsbygoogle
-##[id^="google_ads_iframe"]
-##[id^="div-gpt-ad"]
-##[id^="aswift_"][id$="_host"]
-##[data-google-query-id]
-##.GoogleActiveViewElement
-##iframe[src*="doubleclick.net"]
-##iframe[src*="googlesyndication.com"]
-##iframe[src*="amazon-adsystem.com"]
-##a[href^="https://ad.doubleclick.net/"]
-##amp-ad
-##amp-embed[type="taboola"]
-##amp-embed[type="outbrain"]
-##[id^="taboola-"]
-##.trc_rbox_container
-##.OUTBRAIN
-##.ob-widget
-##[id^="rcjsload_"]
-##[id^="ezoic-pub-ad-placeholder-"]
-##.ezoic-ad
-###carbonads
-##[id^="bsa-zone_"]
-##.ad-banner
-##.ad-container
-##.ad-slot
-##.ad-wrapper
-##.advertisement
-##[aria-label="Advertisement"]
-##div[id^="ad-slot-"]
-
-! ---------------------------------------------------------------------------
-! Element hiding – site specific
-! ---------------------------------------------------------------------------
-youtube.com###masthead-ad
-youtube.com###player-ads
-youtube.com##ytd-ad-slot-renderer
-youtube.com##ytd-display-ad-renderer
-youtube.com##ytd-promoted-sparkles-web-renderer
-youtube.com##ytd-in-feed-ad-layout-renderer
-youtube.com##ytd-banner-promo-renderer
-youtube.com##ytd-statement-banner-renderer
-youtube.com##ytd-merch-shelf-renderer
-youtube.com##ytd-rich-item-renderer:has(> #content > ytd-ad-slot-renderer)
-youtube.com##.ytp-ad-overlay-container
-google.com###tads
-google.com###tadsb
-google.com###bottomads
-google.com##div[data-text-ad]
-bing.com##.b_ad
-reddit.com##shreddit-ad-post
-reddit.com##shreddit-comments-page-ad
-reddit.com##.promotedlink
+||ads.msn.com^
+||ads.yahoo.com^
+||rad.msn.com^

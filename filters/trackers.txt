@@ -1,15 +1,13 @@
-[Adblock Plus 2.0]
-! Title: AdBlocker Plugin – Trackers
-! Description: Analytics, session recording, tracking pixels and data brokers.
-! Note: Google Tag Manager containers (gtm.js) are intentionally not blocked,
-!       many sites break without them. Only the gtag.js analytics loader is.
+! Title: AdBlocker – Trackers
+! Analytics, session recording, tracking pixels, telemetry and data brokers.
+! Blocking an analytics service also blocks its own website and dashboard;
+! add an exception in the app if you use one of them.
 
 ! ---------------------------------------------------------------------------
 ! Web analytics
 ! ---------------------------------------------------------------------------
 ||google-analytics.com^
 ||analytics.google.com^
-||googletagmanager.com/gtag/js
 ||stats.g.doubleclick.net^
 ||api.amplitude.com^
 ||api2.amplitude.com^
@@ -23,8 +21,6 @@
 ||mc.yandex.ru^
 ||mixpanel.com^
 ||mxpnl.com^
-||plausible.io/js/
-||plausible.io/api/event
 ||quantcount.com^
 ||quantserve.com^
 ||scorecardresearch.com^
@@ -39,8 +35,6 @@
 ||segment.io^
 ||2o7.net^
 ||omtrdc.net^
-/piwik.js$script
-/matomo.js$script
 
 ! ---------------------------------------------------------------------------
 ! Session recording and heatmaps
@@ -66,22 +60,18 @@
 ! Advertising pixels
 ! ---------------------------------------------------------------------------
 ||bat.bing.com^
-||connect.facebook.net/*/fbevents.js
-||facebook.com/tr^
 ||analytics.tiktok.com^
 ||px.ads.linkedin.com^
-||snap.licdn.com/li.lms-analytics/
 ||tr.snapchat.com^
-||sc-static.net/scevent.min.js
 ||ct.pinterest.com^
 ||analytics.twitter.com^
 ||static.ads-twitter.com^
-||t.co/i/adsct
 ||munchkin.marketo.net^
 
 ! ---------------------------------------------------------------------------
-! In-app analytics and install attribution
+! App and game analytics, install attribution
 ! ---------------------------------------------------------------------------
+||api.gameanalytics.com^
 ||app-measurement.com^
 ||appmetrica.yandex.net^
 ||appsflyer.com^

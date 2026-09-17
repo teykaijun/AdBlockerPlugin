@@ -21,7 +21,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 
-/** A list compiled into the app from the repository's `filters/` folder. */
+/** A list packaged into the app from the repository's `filters/` folder. */
 data class BuiltInList(
     val id: String,
     val title: String,
@@ -64,10 +64,7 @@ class FilterRepository(
         val blocked = HashSet<String>(4_096)
         val allowed = HashSet<String>()
         for (list in builtIn) {
-            if (!settings.isBuiltInEnabled(list)) continue
-            context.assets.open("filters/${list.id}.txt").bufferedReader().useLines {
-                RuleParser.parseInto(it, blocked, allowed)
-            }
+            if (settings.isBuiltInEnabled(list)) readBuiltIn(list.id, blocked, allowed)
         }
         for (list in settings.remoteLists) {
             val file = fileFor(list.id)
@@ -75,11 +72,18 @@ class FilterRepository(
                 file.bufferedReader().useLines { RuleParser.parseInto(it, blocked, allowed) }
             }
         }
-        // The user's own rules win over anything a list says.
+        // Tells Firefox not to switch to its own DNS-over-HTTPS, which would skip the filter.
+        blocked += FIREFOX_DOH_CANARY
+        allowed -= FIREFOX_DOH_CANARY
+        // The user's own rules win over everything else.
         blocked += settings.blockedDomains
         allowed -= settings.blockedDomains
         allowed += settings.allowedDomains
         DomainMatcher(blocked, allowed)
+    }
+
+    private fun readBuiltIn(id: String, blocked: MutableSet<String>, allowed: MutableSet<String>) {
+        context.assets.open("$id.txt").bufferedReader().useLines { RuleParser.parseInto(it, blocked, allowed) }
     }
 
     /** Downloads `list` in the background, replacing the cached copy on success. */
@@ -160,16 +164,19 @@ class FilterRepository(
     private fun fileFor(id: String) = File(listDir, "$id.txt")
 
     private fun readIndex(): List<BuiltInList> {
-        val json = context.assets.open("filters/index.json").bufferedReader().use { it.readText() }
+        val json = context.assets.open("lists.json").bufferedReader().use { it.readText() }
         val array = JSONArray(json)
         return (0 until array.length()).map { i ->
             val o = array.getJSONObject(i)
+            val id = o.getString("id")
+            val blocked = HashSet<String>()
+            readBuiltIn(id, blocked, HashSet())
             BuiltInList(
-                id = o.getString("id"),
+                id = id,
                 title = o.getString("title"),
                 description = o.getString("description"),
                 enabledByDefault = o.getBoolean("enabledByDefault"),
-                domains = o.getInt("domains"),
+                domains = blocked.size,
             )
         }
     }
@@ -196,6 +203,7 @@ class FilterRepository(
     }
 
     private companion object {
+        const val FIREFOX_DOH_CANARY = "use-application-dns.net"
         val MAX_AGE_MS = TimeUnit.DAYS.toMillis(7)
         const val MAX_BYTES = 50L * 1024 * 1024
         const val TIMEOUT_MS = 30_000
