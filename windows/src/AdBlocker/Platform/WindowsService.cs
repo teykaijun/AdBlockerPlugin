@@ -91,7 +91,7 @@ public static class ServiceManager
         {
             if (Status() is not null) Stop();
             Directory.CreateDirectory(InstallDirectory);
-            File.Copy(current, InstalledExecutable, overwrite: true);
+            ReplaceInstalledExecutable(current);
         }
 
         var binaryPath = $"\"{InstalledExecutable}\" service";
@@ -107,6 +107,27 @@ public static class ServiceManager
         // Restart after a crash, so the PC is not left pointing at a DNS server that is gone.
         Sc("failure", ServiceName, "reset=", "86400", "actions=", "restart/2000/restart/5000/restart/30000");
         return InstalledExecutable;
+    }
+
+    /// <summary>A service that just stopped can keep its file open for a moment while its process exits.</summary>
+    private static void ReplaceInstalledExecutable(string source)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                File.Copy(source, InstalledExecutable, overwrite: true);
+                return;
+            }
+            catch (IOException) when (attempt < 40)
+            {
+                Thread.Sleep(250);
+            }
+            catch (IOException e)
+            {
+                throw new UserError($"Could not replace {InstalledExecutable} because it is still in use. Please wait a moment and run \"adblocker install\" again.", e);
+            }
+        }
     }
 
     public static void Uninstall()
