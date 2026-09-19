@@ -1,6 +1,7 @@
 package com.teykaijun.adblocker.ui
 
 import android.provider.Settings as AndroidSettings
+import android.text.format.Formatter
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -33,6 +34,10 @@ import com.teykaijun.adblocker.data.Totals
 import com.teykaijun.adblocker.data.parseIpLiteral
 import com.teykaijun.adblocker.tabs.TabCloser
 import com.teykaijun.adblocker.tabs.TabCloserStats
+import com.teykaijun.adblocker.update.ApkInstaller
+import com.teykaijun.adblocker.update.Release
+import com.teykaijun.adblocker.update.UpdateController
+import com.teykaijun.adblocker.update.UpdateState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -41,12 +46,15 @@ fun SettingsScreen(
     totals: Totals,
     tabCloserOn: Boolean,
     tabCloserStats: TabCloserStats,
+    updateState: UpdateState,
     onUpdateSettings: ((Settings) -> Settings) -> Unit,
     onResetStats: () -> Unit,
 ) {
     val context = LocalContext.current
     var confirmReset by remember { mutableStateOf(false) }
     var explainTabCloser by remember { mutableStateOf(false) }
+    var confirmUpdate by remember { mutableStateOf<Release?>(null) }
+    var allowInstalls by remember { mutableStateOf(false) }
     var customDns by rememberSaveable { mutableStateOf(settings.customDns) }
 
     Scaffold(
@@ -154,6 +162,21 @@ fun SettingsScreen(
                     "• Only one VPN app can run at a time.",
             )
 
+            SectionHeader("Updates")
+            UpdateRow(
+                state = updateState,
+                onCheck = { UpdateController.check(context) },
+                onInstall = { release ->
+                    if (ApkInstaller.isAllowed(context)) confirmUpdate = release else allowInstalls = true
+                },
+            )
+            SwitchRow(
+                title = "Check for updates automatically",
+                body = "Once a day, AdBlocker asks GitHub whether a newer version is out. Nothing about you is sent.",
+                checked = settings.autoCheckUpdates,
+                onCheckedChange = { on -> onUpdateSettings { it.copy(autoCheckUpdates = on) } },
+            )
+
             SectionHeader("About")
             ClickRow(title = "Version", body = BuildConfig.VERSION_NAME, onClick = {})
             ClickRow(
@@ -163,6 +186,54 @@ fun SettingsScreen(
             )
             ClickRow(title = "Source code", body = AppLinks.SOURCE.removePrefix("https://"), onClick = { context.openUrl(AppLinks.SOURCE) })
         }
+    }
+
+    confirmUpdate?.let { release ->
+        val size = Formatter.formatShortFileSize(context, release.apkSize)
+        AlertDialog(
+            onDismissRequest = { confirmUpdate = null },
+            title = { Text("Update to ${release.version}?") },
+            text = {
+                Text(
+                    "AdBlocker downloads the new version ($size) from its GitHub releases page, checks it against " +
+                        "the checksum published there, and asks Android to install it. Your settings and filters stay " +
+                        "as they are.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmUpdate = null
+                    UpdateController.downloadAndInstall(context)
+                }) { Text("Update") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    confirmUpdate = null
+                    context.openUrl(release.pageUrl)
+                }) { Text("What's new") }
+            },
+        )
+    }
+
+    if (allowInstalls) {
+        AlertDialog(
+            onDismissRequest = { allowInstalls = false },
+            title = { Text("Let AdBlocker install updates?") },
+            text = {
+                Text(
+                    "Android needs your permission before an app may install another one. On the next screen, turn " +
+                        "on “Allow from this source” for AdBlocker, then tap Update again. Android still asks you to " +
+                        "confirm every install.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    allowInstalls = false
+                    context.openInstallPermission()
+                }) { Text("Open settings") }
+            },
+            dismissButton = { TextButton(onClick = { allowInstalls = false }) { Text("Not now") } },
+        )
     }
 
     if (explainTabCloser) {
@@ -203,6 +274,25 @@ fun SettingsScreen(
             dismissButton = { TextButton(onClick = { confirmReset = false }) { Text("Cancel") } },
         )
     }
+}
+
+/** One row that both reports the update state and starts the next step. */
+@Composable
+private fun UpdateRow(state: UpdateState, onCheck: () -> Unit, onInstall: (Release) -> Unit) {
+    val (title, body, action) = when (state) {
+        UpdateState.Idle -> Triple("Check for updates", "You have version ${BuildConfig.VERSION_NAME}.", onCheck)
+        UpdateState.Checking -> Triple("Looking for a new version…", null, null)
+        is UpdateState.UpToDate -> Triple("AdBlocker is up to date", "Version ${state.version} is the latest one.", onCheck)
+        is UpdateState.Available -> Triple(
+            "Update to ${state.release.version}",
+            "You have ${BuildConfig.VERSION_NAME}. Tap to download and install the new version.",
+            { onInstall(state.release) },
+        )
+        is UpdateState.Downloading -> Triple("Downloading… ${state.percent}%", null, null)
+        UpdateState.Installing -> Triple("Ready to install", "Confirm the install when Android asks.", null)
+        is UpdateState.Failed -> Triple("Could not update", "${state.message} Tap to try again.", onCheck)
+    }
+    ClickRow(title = title, body = body, onClick = action ?: {})
 }
 
 @Composable

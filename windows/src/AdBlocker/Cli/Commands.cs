@@ -4,6 +4,7 @@ using System.Net.NetworkInformation;
 using System.Runtime.InteropServices;
 using System.ServiceProcess;
 using System.Text;
+using System.Text.Json;
 using AdBlocker.Config;
 using AdBlocker.Core;
 using AdBlocker.Dns;
@@ -55,6 +56,7 @@ internal static class Commands
                 "log" => await Log(rest),
                 "stats" when rest.FirstOrDefault() == "reset" => ResetStats(),
                 "doctor" => Doctor(rest),
+                "upgrade" => await Upgrade(rest),
                 "support" => Support(rest),
                 "help" or "--help" or "-h" or "/?" => Help(),
                 "version" or "--version" => Version(),
@@ -356,6 +358,12 @@ internal static class Commands
             Terminal.Warn("  Network adapters still point at AdBlocker, which is not running, so websites may not load.");
             Terminal.Warn("  Fix it with \"adblocker restore\" (as administrator) or start AdBlocker again.");
         }
+
+        if (Updates.Read(Paths)?.Version is { } newer && Updates.IsNewer(newer, AppInfo.Version))
+        {
+            Terminal.Line();
+            Terminal.Heading($"  AdBlocker {newer} is available. Run \"adblocker upgrade\" as administrator to install it.");
+        }
     }
 
     private static int Doctor(string[] args)
@@ -404,6 +412,92 @@ internal static class Commands
 
         if (problems == 0) Terminal.Ok("No problems found.");
         return problems == 0 ? 0 : 1;
+    }
+
+    // ----------------------------------------------------------------------------------------------
+    // Updating
+    // ----------------------------------------------------------------------------------------------
+
+    private static async Task<int> Upgrade(string[] args)
+    {
+        var options = new Arguments(args, [], ["--check"]);
+        options.NoMoreThan(0);
+
+        using var http = FilterLists.CreateDownloadClient();
+        Terminal.Line("Looking for a newer version...");
+        Release? release;
+        try
+        {
+            release = await Updates.CheckAsync(http, AppInfo.Version, CancellationToken.None);
+        }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or JsonException)
+        {
+            throw new UserError($"Could not ask GitHub for the latest version: {e.Message}");
+        }
+
+        if (release is null)
+        {
+            Terminal.Ok($"AdBlocker {AppInfo.Version} is the latest version.");
+            return 0;
+        }
+
+        Terminal.Heading($"AdBlocker {release.Version} is available. You have {AppInfo.Version}.");
+        Terminal.Dim($"Release notes: {release.PageUrl}");
+        if (options.Flag("--check"))
+        {
+            Terminal.Line("Run \"adblocker upgrade\" as administrator to install it.");
+            return 0;
+        }
+
+        Elevation.Require("upgrade");
+        if (ServiceManager.Status() is null)
+        {
+            throw new UserError("AdBlocker is not installed as a service here, so there is nothing to replace. " +
+                                "Download the new version yourself and run \"adblocker install\".");
+        }
+
+        var directory = Path.Combine(Path.GetTempPath(), "AdBlocker-update");
+        var lastReported = 0;
+        var downloaded = await Updates.DownloadAsync(release, http, directory, percent =>
+        {
+            if (percent < lastReported + 25 && percent != 100) return;
+            lastReported = percent;
+            Terminal.Dim($"  downloading... {percent}%");
+        }, CancellationToken.None);
+        Terminal.Ok("Downloaded, and the checksum matches the one published with the release.");
+
+        // The new executable stops the service, copies itself over the installed copy and starts again.
+        Terminal.Line($"Installing {release.Version}...");
+        try
+        {
+            using var install = Process.Start(new ProcessStartInfo(downloaded, "install") { UseShellExecute = false })
+                                ?? throw new UserError("Could not start the downloaded version.");
+            await install.WaitForExitAsync();
+            if (install.ExitCode != 0) throw new UserError($"The new version could not install itself (exit code {install.ExitCode}).");
+        }
+        catch (System.ComponentModel.Win32Exception e)
+        {
+            // AdBlocker is not code-signed, so Smart App Control or SmartScreen can refuse to run it.
+            throw new UserError(
+                $"Windows would not run the downloaded file: {e.Message}\n" +
+                $"It is kept at {downloaded}. You can run it yourself with \"install\", or download the new version from\n" +
+                $"{release.PageUrl} and run \"adblocker install\" as administrator.");
+        }
+        TryDelete(directory);
+        Terminal.Ok($"AdBlocker {release.Version} is installed and blocking.");
+        return 0;
+    }
+
+    private static void TryDelete(string directory)
+    {
+        try
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            Terminal.Dim($"You can delete {directory} when you like.");
+        }
     }
 
     // ----------------------------------------------------------------------------------------------
@@ -779,6 +873,10 @@ internal static class Commands
               dns [server...] *      Show, or set, where allowed lookups go:
                                      auto (your network's DNS, the default), cloudflare, quad9,
                                      google (these three use encrypted DNS), an IP address or an https:// URL
+
+            Updating
+              upgrade [--check] *    Download the latest version from GitHub and install it
+                                     (--check only reports whether one is available)
 
             Troubleshooting
               doctor                 Look for settings that let ads slip past AdBlocker

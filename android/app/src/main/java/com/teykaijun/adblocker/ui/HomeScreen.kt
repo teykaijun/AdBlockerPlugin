@@ -45,6 +45,7 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.teykaijun.adblocker.BuildConfig
 import com.teykaijun.adblocker.R
 import com.teykaijun.adblocker.data.Totals
 import com.teykaijun.adblocker.ui.theme.ShieldBottom
@@ -57,8 +58,10 @@ fun HomeScreen(
     state: VpnState,
     totals: Totals,
     privateDnsServer: String?,
+    newVersion: String?,
     onToggle: () -> Unit,
     onOpenActivity: () -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     val context = LocalContext.current
     Scaffold(
@@ -89,6 +92,16 @@ fun HomeScreen(
             }
             if (state is VpnState.Failed) {
                 NoticeCard(title = "Protection stopped", body = state.message, tone = NoticeTone.Warning, icon = Icons.Filled.Warning)
+            }
+            if (newVersion != null) {
+                NoticeCard(
+                    title = "AdBlocker $newVersion is available",
+                    body = "You have ${BuildConfig.VERSION_NAME}. Settings has a button to install it.",
+                    tone = NoticeTone.Info,
+                    icon = Icons.Filled.Info,
+                    actionLabel = "Go to Settings",
+                    onAction = onOpenSettings,
+                )
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {

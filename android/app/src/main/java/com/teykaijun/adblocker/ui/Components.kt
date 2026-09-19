@@ -205,6 +205,18 @@ fun Context.openSystemSettings(vararg actions: String) {
     }
 }
 
+/** Opens the "Install unknown apps" switch for AdBlocker, which the update button needs. */
+fun Context.openInstallPermission() {
+    try {
+        startActivity(
+            Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, "package:$packageName".toUri())
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+    } catch (e: ActivityNotFoundException) {
+        openAppInfo()
+    }
+}
+
 /** Opens AdBlocker's App info page in Android's settings. */
 fun Context.openAppInfo() {
     try {

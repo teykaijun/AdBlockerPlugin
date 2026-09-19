@@ -34,6 +34,20 @@ public sealed class AppConfig
 
     /// <summary>Also write allowed lookups to the query log (blocked ones are always written).</summary>
     public bool LogAllowedQueries { get; set; }
+
+    /// <summary>Ask GitHub once a day whether a newer AdBlocker is out, and say so in "status".</summary>
+    public bool CheckForUpdates { get; set; } = true;
+}
+
+/// <summary>What the last update check found, kept in update.json for "status" to show.</summary>
+public sealed class UpdateState
+{
+    public DateTimeOffset CheckedAt { get; set; }
+
+    /// <summary>The newer version on the releases page, or null when this build is the latest.</summary>
+    public string? Version { get; set; }
+
+    public string? PageUrl { get; set; }
 }
 
 public sealed class CommunityListSetting
@@ -90,5 +104,6 @@ public static class ConfigStore
 [JsonSerializable(typeof(List<BuiltInListInfo>))]
 [JsonSerializable(typeof(Dictionary<string, ListStatus>))]
 [JsonSerializable(typeof(StatsSnapshot))]
+[JsonSerializable(typeof(UpdateState))]
 [JsonSerializable(typeof(DnsBackup))]
 internal sealed partial class AppJson : JsonSerializerContext;

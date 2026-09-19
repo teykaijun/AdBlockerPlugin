@@ -1,4 +1,4 @@
-import { get } from './api.js';
+import { get, isNewerVersion } from './api.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -8,6 +8,15 @@ async function showStatus() {
     const { version } = await get('/status');
     status.dataset.state = 'on';
     status.textContent = `Working with AdBlocker for Windows ${version}.`;
+    // An unpacked extension cannot update itself, so point at the one in the release.
+    const mine = chrome.runtime.getManifest().version;
+    if (isNewerVersion(version, mine)) {
+      const note = $('newer');
+      note.textContent =
+        `This companion is ${mine}. Unzip the AdBlocker-Companion.zip from release ${version} over its folder, ` +
+        'then press Reload on the extensions page.';
+      note.hidden = false;
+    }
   } catch {
     status.dataset.state = 'off';
     status.textContent =

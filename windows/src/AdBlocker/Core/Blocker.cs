@@ -36,6 +36,7 @@ public sealed class Blocker(AppPaths paths, BlockerOptions options, ILog log)
 {
     private static readonly TimeSpan UpstreamTimeout = TimeSpan.FromSeconds(2.5);
     private static readonly TimeSpan ListRefreshInterval = TimeSpan.FromHours(6);
+    private static readonly TimeSpan UpdateCheckInterval = TimeSpan.FromHours(24);
 
     private readonly FilterLists _lists = new(paths);
     private readonly SystemDns? _systemDns = options.ManageSystemDns ? new SystemDns(paths) : null;
@@ -211,7 +212,29 @@ public sealed class Blocker(AppPaths paths, BlockerOptions options, ILog log)
             {
                 log.Warn($"Updating community lists failed: {e.Message}");
             }
+            await CheckForUpdateAsync(http, cancellationToken);
             await Task.Delay(ListRefreshInterval, cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Once a day, notes whether a newer AdBlocker was released, so "adblocker status" can say
+    /// so without going online itself. Nothing is installed without the user asking.
+    /// </summary>
+    private async Task CheckForUpdateAsync(HttpClient http, CancellationToken cancellationToken)
+    {
+        if (!_config.CheckForUpdates) return;
+        var last = Updates.Read(paths)?.CheckedAt ?? DateTimeOffset.MinValue;
+        if (DateTimeOffset.UtcNow - last < UpdateCheckInterval) return;
+        try
+        {
+            var release = await Updates.CheckAsync(http, AppInfo.Version, cancellationToken);
+            Updates.Save(paths, release);
+            if (release is not null) log.Info($"AdBlocker {release.Version} is available. Run \"adblocker upgrade\" to install it.");
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            log.Info($"Could not check for a new version: {e.Message}");
         }
     }
 

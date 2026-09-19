@@ -11,6 +11,8 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Turning protection back on after a reboot or an app update. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- The in-app update button; Android still asks you to confirm every install. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- Lets the Apps screen list launchable apps on Android 11 and later. -->
     <queries>
@@ -97,6 +99,11 @@
         <!-- The "Allow anyway" button on a scam warning; only this app's notifications send it. -->
         <receiver
             android:name=".vpn.AllowSiteReceiver"
+            android:exported="false" />
+
+        <!-- How Android's package installer reports back about an in-app update. -->
+        <receiver
+            android:name=".update.InstallReceiver"
             android:exported="false" />
 
         <receiver

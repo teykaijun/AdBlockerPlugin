@@ -17,6 +17,7 @@ public sealed class AppPaths(string root, bool restrictAccess = true)
     public string ConfigFile => Path.Combine(root, "config.json");
     public string DnsStateFile => Path.Combine(root, "dns-backup.json");
     public string StatsFile => Path.Combine(root, "stats.json");
+    public string UpdateFile => Path.Combine(root, "update.json");
     public string ListsDirectory => Path.Combine(root, "lists");
     public string ListStatusFile => Path.Combine(ListsDirectory, "status.json");
     public string LogsDirectory => Path.Combine(root, "logs");

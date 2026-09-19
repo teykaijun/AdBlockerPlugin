@@ -120,13 +120,21 @@ li.scam span {
   font-weight: 600;
 }
 
-.scams {
+.scams,
+.note {
   margin: 10px 0 0;
   padding: 8px 10px;
   border-radius: 8px;
   background: var(--surface);
+}
+
+.scams {
   color: var(--warn);
   font-weight: 600;
+}
+
+.note {
+  color: var(--muted);
 }
 
 footer {

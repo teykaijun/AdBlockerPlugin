@@ -8,6 +8,7 @@
 <p align="center">
   <a href="https://github.com/teykaijun/AdBlockerPlugin/releases/latest">Download</a> ·
   <a href="#scam-and-fake-shop-warnings">Scam warnings</a> ·
+  <a href="#keeping-it-up-to-date">Updates</a> ·
   <a href="#windows">Windows</a> ·
   <a href="#browser-companion">Browser companion</a> ·
   <a href="#android">Android</a> ·
@@ -158,6 +159,7 @@ Commands marked * need a terminal opened with **Run as administrator**.
 | `lists add <url> [name]` * / `lists remove <id>` * | Add or remove a list of your own (hosts file or Adblock-style, `https://` only) |
 | `update` * | Download the latest community lists now (they also update weekly on their own) |
 | `dns [server...]` * | Show or choose where allowed lookups go: `auto` (your network's DNS, the default), `cloudflare`, `quad9`, `google` (these three use encrypted DNS over HTTPS), an IP address, or an `https://` DNS-over-HTTPS URL |
+| `upgrade [--check]` * | Download the latest version from GitHub, check it against the published checksum, and install it (`--check` only reports whether one is available) |
 | `doctor` | Look for settings that might let ads slip past, and check that the browser companion can reach AdBlocker |
 | `restore` * | Put the original network settings back if AdBlocker was killed and can't restart |
 | `stats reset` * | Set the counters back to zero |
@@ -176,6 +178,7 @@ Everything is kept in `C:\ProgramData\AdBlocker`, which only administrators and 
 | `logs\queries.log` | Blocked lookups, marked `BLOCKED` or `SCAM` (and allowed ones if `logAllowedQueries` is `true`), rotated at 10 MB |
 | `logs\service.log` | What the service did, and any errors |
 | `dns-backup.json` | Your network settings from before AdBlocker, used to restore them |
+| `update.json` | What the daily update check found, so `status` can mention it without going online |
 
 ### If ads still get through on Windows
 
@@ -281,7 +284,7 @@ default) help too.
 | **Activity** | Browse and search recent lookups, with suspected scam sites marked; tap one to always allow or block it |
 | **Filters** | Turn lists on or off, add a list by URL, manage your blocked and allowed domains |
 | **Apps** | Let apps skip AdBlocker entirely, handy if one misbehaves |
-| **Settings** | Close blocked pop-up tabs, choose the DNS server, restart behaviour and Always-on VPN, and reset statistics |
+| **Settings** | Close blocked pop-up tabs, choose the DNS server, restart behaviour and Always-on VPN, install updates, and reset statistics |
 | **⋮ menu** | Support development ☕, or open the source code |
 
 There's also a Quick Settings tile and a status notification with a **Pause** button.
@@ -298,6 +301,36 @@ There's also a Quick Settings tile and a status notification with a **Pause** bu
   browsers. It reads the address bar by its view id, checks the host against the same rules the VPN
   uses, and performs the system Back action. The decisions (act once per address, leave typed
   addresses alone, stop on redirect loops) live in `TabGuard`, which has its own unit tests.
+
+## Keeping it up to date
+
+Neither app is in a store, so they look for new versions themselves, on the project's GitHub
+releases page. Nothing installs without you saying so.
+
+**Android.** Settings has an **Update** button. It shows the version you have, downloads the new
+APK, checks it against the `SHA256SUMS.txt` published with the release, and hands it to Android,
+which asks you to confirm. The Home screen shows a card when a new version is out. The first time,
+Android asks you to allow AdBlocker to install apps; the app links straight to that switch.
+
+**Windows.** `adblocker upgrade` (as administrator) does the same from the terminal: it downloads
+the new `adblocker.exe`, checks the checksum, and lets it replace the installed service. The service
+checks once a day in the background, so `adblocker status` tells you when something is out, and
+`adblocker upgrade --check` just reports without installing.
+
+**Browser companion.** An unpacked extension can't update itself. Its window tells you when
+AdBlocker for Windows is newer than the extension: unzip the new `AdBlocker-Companion.zip` over the
+folder and press **Reload** on the extensions page.
+
+A few honest caveats:
+
+- `adblocker.exe` isn't code-signed, so Windows may block the downloaded file (SmartScreen, or Smart
+  App Control on newer machines). If that happens, `upgrade` tells you where the file is so you can
+  run it yourself.
+- The check asks GitHub for the latest release and nothing else. Turn it off with the
+  **Check for updates automatically** switch on Android, or `"checkForUpdates": false` in
+  `config.json` on Windows.
+- Android only replaces an app with a build signed by the same key, and checks that itself. An APK
+  from somewhere else can't sneak in this way.
 
 ## Filter lists
 
@@ -434,6 +467,7 @@ settings. The service runs as LocalSystem.
 | `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_SPECIAL_USE`, `POST_NOTIFICATIONS` | Keep filtering running and show its status notification |
 | `RECEIVE_BOOT_COMPLETED` | Turn protection back on after a restart or an update |
 | Accessibility access (optional, off until you switch it on) | **Close blocked pop-up tabs**: read supported browsers' address bars and press Back |
+| `REQUEST_INSTALL_PACKAGES` | The **Update** button. Android still asks you to confirm every install, and only accepts builds signed with the same key. |
 
 ## Privacy
 
@@ -442,7 +476,8 @@ you chose (by default your network's own). Apart from that, they only go online 
 community lists you turned on, from the addresses shown in the app. The browser companion only talks
 to AdBlocker on your own PC and forgets its counts when the browser closes. On Android, **Close
 blocked pop-up tabs** only looks at browsers' address bars on the phone and keeps nothing but a count
-and the latest blocked address, in memory. The support links just open a web page in your browser.
+and the latest blocked address, in memory. The update check asks GitHub for the latest release and
+can be turned off. The support links just open a web page in your browser.
 
 ## License
 

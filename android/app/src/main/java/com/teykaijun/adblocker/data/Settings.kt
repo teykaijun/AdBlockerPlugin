@@ -98,6 +98,8 @@ data class Settings(
     val dnsProvider: DnsProvider = DnsProvider.NETWORK,
     val customDns: String = "",
     val startOnBoot: Boolean = true,
+    /** Look for a new version on GitHub once a day. */
+    val autoCheckUpdates: Boolean = true,
 ) {
     fun isBuiltInEnabled(list: BuiltInList) = builtInLists[list.id] ?: list.enabledByDefault
 
@@ -145,6 +147,7 @@ class SettingsStore(context: Context) {
             dnsProvider = runCatching { DnsProvider.valueOf(prefs.getString(KEY_DNS, null)!!) }.getOrDefault(DnsProvider.NETWORK),
             customDns = prefs.getString(KEY_CUSTOM_DNS, "").orEmpty(),
             startOnBoot = prefs.getBoolean(KEY_START_ON_BOOT, true),
+            autoCheckUpdates = prefs.getBoolean(KEY_AUTO_UPDATES, true),
         )
     }
 
@@ -177,6 +180,7 @@ class SettingsStore(context: Context) {
             putString(KEY_DNS, s.dnsProvider.name)
             putString(KEY_CUSTOM_DNS, s.customDns)
             putBoolean(KEY_START_ON_BOOT, s.startOnBoot)
+            putBoolean(KEY_AUTO_UPDATES, s.autoCheckUpdates)
         }
     }
 
@@ -211,6 +215,7 @@ class SettingsStore(context: Context) {
         const val KEY_DNS = "dns_provider"
         const val KEY_CUSTOM_DNS = "custom_dns"
         const val KEY_START_ON_BOOT = "start_on_boot"
+        const val KEY_AUTO_UPDATES = "auto_check_updates"
     }
 }
 

@@ -27,6 +27,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.teykaijun.adblocker.R
 import com.teykaijun.adblocker.app
 import com.teykaijun.adblocker.tabs.TabCloser
+import com.teykaijun.adblocker.update.UpdateController
+import com.teykaijun.adblocker.update.UpdateState
 import com.teykaijun.adblocker.vpn.VpnController
 import com.teykaijun.adblocker.vpn.VpnState
 
@@ -56,6 +58,7 @@ fun AdBlockerUi(onStartProtection: () -> Unit, onStopProtection: () -> Unit) {
     val recent by app.stats.recent.collectAsStateWithLifecycle()
     val network by app.network.snapshot.collectAsStateWithLifecycle()
     val listStatus by app.filters.status.collectAsStateWithLifecycle()
+    val updateState by UpdateController.state.collectAsStateWithLifecycle()
     val tabCloserRunning by TabCloser.running.collectAsStateWithLifecycle()
     val tabCloserStats by TabCloser.stats.collectAsStateWithLifecycle()
     var tabCloserEnabled by remember { mutableStateOf(TabCloser.isEnabled(app)) }
@@ -63,6 +66,7 @@ fun AdBlockerUi(onStartProtection: () -> Unit, onStopProtection: () -> Unit) {
 
     // Counters are otherwise only published while the VPN runs.
     LaunchedEffect(Unit) { app.stats.publish() }
+    LaunchedEffect(Unit) { UpdateController.checkIfDue(app) }
     // The user switches the tab closer on or off in Android's settings, then comes back.
     LaunchedEffect(tabCloserRunning) { tabCloserEnabled = TabCloser.isEnabled(app) }
     LifecycleResumeEffect(Unit) {
@@ -91,8 +95,10 @@ fun AdBlockerUi(onStartProtection: () -> Unit, onStopProtection: () -> Unit) {
                     state = vpnState,
                     totals = totals,
                     privateDnsServer = network.privateDnsServer,
+                    newVersion = (updateState as? UpdateState.Available)?.release?.version,
                     onToggle = { if (VpnController.isActive) onStopProtection() else onStartProtection() },
                     onOpenActivity = { tab = Tab.Activity },
+                    onOpenSettings = { tab = Tab.Settings },
                 )
                 Tab.Activity -> ActivityScreen(
                     events = recent,
@@ -122,6 +128,7 @@ fun AdBlockerUi(onStartProtection: () -> Unit, onStopProtection: () -> Unit) {
                     totals = totals,
                     tabCloserOn = tabCloserRunning || tabCloserEnabled,
                     tabCloserStats = tabCloserStats,
+                    updateState = updateState,
                     onUpdateSettings = app.settings::update,
                     onResetStats = app.stats::reset,
                 )
