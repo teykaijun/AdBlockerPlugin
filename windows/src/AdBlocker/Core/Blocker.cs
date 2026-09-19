@@ -44,6 +44,7 @@ public sealed class Blocker(AppPaths paths, BlockerOptions options, ILog log)
     private readonly Stats _stats = new(paths.StatsFile);
 
     private volatile DomainMatcher _matcher = DomainMatcher.Empty;
+    private volatile DomainMatcher _scam = DomainMatcher.Empty;
     private volatile UpstreamPool _upstreams = new([], UpstreamTimeout);
     private volatile AppConfig _config = new();
     private QueryLog? _queryLog;
@@ -78,7 +79,7 @@ public sealed class Blocker(AppPaths paths, BlockerOptions options, ILog log)
         _servesIPv6 = server.BoundEndpoints.Any(e => e.AddressFamily == AddressFamily.InterNetworkV6);
         log.Info($"Listening for DNS lookups on {string.Join(" and ", server.BoundEndpoints)}.");
 
-        await using var api = options.ApiPort > 0 ? LocalApi.TryStart(options.ApiPort, IsBlocked, log) : null;
+        await using var api = options.ApiPort > 0 ? LocalApi.TryStart(options.ApiPort, IsBlocked, IsScam, log) : null;
         if (api is not null) log.Info($"Answering the browser companion extension on 127.0.0.1:{api.Port}.");
 
         using var watcher = WatchFiles();
@@ -117,7 +118,7 @@ public sealed class Blocker(AppPaths paths, BlockerOptions options, ILog log)
         _stats.Record(blocked);
         var config = _config;
         _queryLog?.Add(
-            new QueryEvent(DateTimeOffset.Now, question.Name, question.Type, blocked),
+            new QueryEvent(DateTimeOffset.Now, question.Name, question.Type, blocked, blocked && _scam.IsBlocked(question.Name)),
             toFile: blocked || config.LogAllowedQueries,
             toEcho: blocked || options.Verbose);
         if (blocked) return DnsMessage.BlockedResponse(query, question);
@@ -135,6 +136,9 @@ public sealed class Blocker(AppPaths paths, BlockerOptions options, ILog log)
     /// <summary>Whether a host is blocked right now (for the browser companion).</summary>
     public bool IsBlocked(string host) => _matcher.IsBlocked(host);
 
+    /// <summary>Whether a blocked host is on one of the scam lists, so it is worth warning about.</summary>
+    public bool IsScam(string host) => _scam.IsBlocked(host) && _matcher.IsBlocked(host);
+
     private void Reload(bool initial)
     {
         var config = ConfigStore.Load(paths);
@@ -144,13 +148,16 @@ public sealed class Blocker(AppPaths paths, BlockerOptions options, ILog log)
         }
 
         var matcher = _lists.BuildMatcher(config);
+        var scam = _lists.BuildScamMatcher(config);
         var automatic = _systemDns?.OriginalServers(config.ExcludedAdapters) ?? SystemDns.CurrentServers(config.ExcludedAdapters);
         var servers = UpstreamSettings.Create(config.Upstream, automatic, _dohClient);
 
         _config = config;
         _matcher = matcher;
+        _scam = scam;
         _upstreams = new UpstreamPool(servers, UpstreamTimeout);
-        log.Info($"{(initial ? "Loaded" : "Reloaded")} {matcher.BlockedCount:N0} blocked domains. " +
+        log.Info($"{(initial ? "Loaded" : "Reloaded")} {matcher.BlockedCount:N0} blocked domains " +
+                 $"({scam.BlockedCount:N0} of them known scam sites). " +
                  $"Allowed lookups go to {string.Join(", ", servers.Select(s => s.Name))}.");
     }
 

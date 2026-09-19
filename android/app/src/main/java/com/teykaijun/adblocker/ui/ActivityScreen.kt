@@ -151,10 +151,14 @@ private fun userRule(domain: String, settings: Settings): Boolean? = when (domai
 
 @Composable
 private fun QueryRow(event: QueryEvent, rule: Boolean?, onClick: () -> Unit) {
-    val color = if (event.blocked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
+    val color = when {
+        event.scam -> MaterialTheme.colorScheme.error
+        event.blocked -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.outlineVariant
+    }
     val status = buildString {
         append(formatTime(event.time))
-        append(if (event.blocked) " · Blocked" else " · Allowed")
+        append(if (event.scam) " · Suspected scam" else if (event.blocked) " · Blocked" else " · Allowed")
         if (rule == true) append(" · you allowed this")
         if (rule == false) append(" · you blocked this")
     }
@@ -180,10 +184,13 @@ private fun DomainDialog(event: QueryEvent, rule: Boolean?, onDismiss: () -> Uni
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    when (rule) {
-                        true -> "You allowed this domain, so it is never blocked."
-                        false -> "You blocked this domain and all of its subdomains."
-                        null -> if (event.blocked) "A filter list blocked this lookup." else "No filter list matched this lookup."
+                    when {
+                        rule == true -> "You allowed this domain, so it is never blocked."
+                        rule == false -> "You blocked this domain and all of its subdomains."
+                        event.scam -> "This domain is on a list of fake shops, subscription traps and similar scams. " +
+                            "Please be careful before allowing it."
+                        event.blocked -> "A filter list blocked this lookup."
+                        else -> "No filter list matched this lookup."
                     },
                 )
                 Text(

@@ -19,8 +19,10 @@ import java.text.NumberFormat
 object Notifications {
     const val PROTECTION_ID = 1
     private const val PROBLEM_ID = 2
+    private const val WARNING_ID = 3
     private const val CHANNEL_STATUS = "status"
     private const val CHANNEL_PROBLEMS = "problems"
+    private const val CHANNEL_WARNINGS = "warnings"
 
     fun createChannels(context: Context) {
         val status = NotificationChannel(
@@ -38,7 +40,14 @@ object Notifications {
         ).apply {
             description = context.getString(R.string.channel_problems_description)
         }
-        manager(context).createNotificationChannels(listOf(status, problems))
+        val warnings = NotificationChannel(
+            CHANNEL_WARNINGS,
+            context.getString(R.string.channel_warnings),
+            NotificationManager.IMPORTANCE_HIGH,
+        ).apply {
+            description = context.getString(R.string.channel_warnings_description)
+        }
+        manager(context).createNotificationChannels(listOf(status, problems, warnings))
     }
 
     /** The ongoing notification shown while the VPN runs. */
@@ -79,6 +88,31 @@ object Notifications {
     }
 
     fun cancelProblem(context: Context) = manager(context).cancel(PROBLEM_ID)
+
+    /** Warns that a blocked lookup was for a known scam site, and offers to allow it anyway. */
+    fun showScamWarning(context: Context, domain: String) {
+        val allow = PendingIntent.getBroadcast(
+            context,
+            domain.hashCode(),
+            AllowSiteReceiver.intent(context, domain),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        val body = "$domain is on AdBlocker's list of fake shops, subscription traps and similar scams, " +
+            "so it was not loaded. Take care if you were about to pay or sign up."
+        val notification = NotificationCompat.Builder(context, CHANNEL_WARNINGS)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle("Suspected scam site blocked")
+            .setContentText(domain)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setCategory(NotificationCompat.CATEGORY_ERROR)
+            .setAutoCancel(true)
+            .setContentIntent(openAppIntent(context))
+            .addAction(0, "Allow anyway", allow)
+            .build()
+        notify(context, WARNING_ID, notification)
+    }
+
+    fun cancelScamWarning(context: Context) = manager(context).cancel(WARNING_ID)
 
     fun openAppIntent(context: Context): PendingIntent = PendingIntent.getActivity(
         context,

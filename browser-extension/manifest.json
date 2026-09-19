@@ -2,8 +2,8 @@
   "manifest_version": 3,
   "name": "AdBlocker Companion",
   "short_name": "AdBlocker",
-  "version": "1.3.0",
-  "description": "Closes ad tabs and undoes ad redirects that AdBlocker for Windows has blocked.",
+  "version": "1.4.0",
+  "description": "Closes ad tabs and undoes ad redirects that AdBlocker for Windows has blocked, and warns about scam sites.",
   "minimum_chrome_version": "116",
   "icons": {
     "16": "icons/icon-16.png",
@@ -23,6 +23,6 @@
     "service_worker": "background.js",
     "type": "module"
   },
-  "permissions": ["webNavigation", "storage"],
+  "permissions": ["webNavigation", "storage", "notifications"],
   "host_permissions": ["http://127.0.0.1/*"]
 }

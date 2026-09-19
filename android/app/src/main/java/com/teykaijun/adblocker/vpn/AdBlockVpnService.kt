@@ -16,10 +16,11 @@ import com.teykaijun.adblocker.data.DnsProvider
 import com.teykaijun.adblocker.data.Settings
 import com.teykaijun.adblocker.data.parseIpLiteral
 import com.teykaijun.adblocker.dns.DnsProxy
-import com.teykaijun.adblocker.dns.DomainMatcher
+import com.teykaijun.adblocker.dns.Rules
 import java.io.IOException
 import java.net.InetAddress
 import java.net.NetworkInterface
+import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -44,6 +45,8 @@ import kotlinx.coroutines.launch
 class AdBlockVpnService : VpnService() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    /** Scam sites already warned about: domain → when the warning may be repeated. */
+    private val warnedAbout = LinkedHashMap<String, Long>()
     private var session: Job? = null
     private var tunnel: ParcelFileDescriptor? = null
     private var proxy: DnsProxy? = null
@@ -86,7 +89,7 @@ class AdBlockVpnService : VpnService() {
         }
         try {
             val settings = app.settings.settings.value
-            establish(settings, app.filters.buildMatcher(settings))
+            establish(settings, app.filters.buildRules(settings))
             VpnController.setState(VpnState.Running(System.currentTimeMillis()))
             app.filters.refreshStale(settings)
             coroutineScope {
@@ -104,7 +107,7 @@ class AdBlockVpnService : VpnService() {
     }
 
     /** Creates (or replaces) the tunnel and starts a DNS proxy on it. */
-    private fun establish(settings: Settings, matcher: DomainMatcher) {
+    private fun establish(settings: Settings, rules: Rules) {
         val subnet = pickSubnet()
         val dnsServer = "$subnet.2"
         val builder = Builder()
@@ -133,9 +136,9 @@ class AdBlockVpnService : VpnService() {
         releaseTunnel()
         tunnel = newTunnel
 
-        val newProxy = DnsProxy(newTunnel.fileDescriptor, { socket -> protect(socket) }, app.stats::record)
-        newProxy.matcher = matcher
-        VpnController.matcher = matcher
+        val newProxy = DnsProxy(newTunnel.fileDescriptor, { socket -> protect(socket) }, ::onQuery)
+        newProxy.matcher = rules.matcher
+        VpnController.rules = rules
         newProxy.network = app.network.snapshot.value.network
         newProxy.upstreamServers = upstreamServers(settings)
         proxy = newProxy
@@ -151,6 +154,26 @@ class AdBlockVpnService : VpnService() {
         }
     }
 
+    /**
+     * Every lookup, straight from the DNS thread. Scam sites get a warning, because a blocked
+     * shop or "free trial" otherwise just looks like a website that is down.
+     */
+    private fun onQuery(domain: String, blocked: Boolean) {
+        val scam = blocked && VpnController.rules?.isScam(domain) == true
+        app.stats.record(domain, blocked, scam)
+        if (scam && shouldWarnAbout(domain)) Notifications.showScamWarning(this, domain)
+    }
+
+    /** At most one warning per site per hour, however many lookups a page makes. */
+    private fun shouldWarnAbout(domain: String): Boolean = synchronized(warnedAbout) {
+        val now = System.currentTimeMillis()
+        warnedAbout.values.removeAll { it <= now }
+        if (domain in warnedAbout) return false
+        if (warnedAbout.size >= MAX_WARNED) warnedAbout.remove(warnedAbout.keys.first())
+        warnedAbout[domain] = now + WARNING_REPEAT_MS
+        true
+    }
+
     private suspend fun reloadRulesOnChange() {
         combine(app.settings.settings.map { ruleInputs(it) }.distinctUntilChanged(), app.filters.revision) { inputs, revision ->
             inputs to revision
@@ -158,17 +181,17 @@ class AdBlockVpnService : VpnService() {
             .distinctUntilChanged()
             .drop(1)
             .collectLatest {
-                val matcher = app.filters.buildMatcher(app.settings.settings.value)
+                val rules = app.filters.buildRules(app.settings.settings.value)
                 proxy?.let {
-                    it.matcher = matcher
-                    VpnController.matcher = matcher
+                    it.matcher = rules.matcher
+                    VpnController.rules = rules
                 }
             }
     }
 
     private suspend fun reconnectWhenBypassAppsChange() {
         app.settings.settings.map { it.bypassApps }.distinctUntilChanged().drop(1).collect {
-            establish(app.settings.settings.value, proxy?.matcher ?: DomainMatcher.EMPTY)
+            establish(app.settings.settings.value, VpnController.rules ?: Rules.EMPTY)
         }
     }
 
@@ -236,7 +259,7 @@ class AdBlockVpnService : VpnService() {
 
     private fun releaseTunnel() {
         // establish() sets it again when it replaces the tunnel.
-        VpnController.matcher = null
+        VpnController.rules = null
         proxy?.stop()
         proxy = null
         proxyThread?.join(1_000)
@@ -262,6 +285,8 @@ class AdBlockVpnService : VpnService() {
         const val ACTION_STOP = "com.teykaijun.adblocker.action.STOP"
         private const val TAG = "AdBlockVpnService"
         private val SUBNETS = listOf("192.0.2", "198.51.100", "203.0.113")
+        private val WARNING_REPEAT_MS = TimeUnit.HOURS.toMillis(1)
+        private const val MAX_WARNED = 256
 
         fun intent(context: Context, action: String): Intent =
             Intent(context, AdBlockVpnService::class.java).setAction(action)

@@ -12,7 +12,7 @@ namespace AdBlocker.Core;
 /// <remarks>
 /// <list type="bullet">
 ///   <item><c>GET /v1/status</c> → <c>{"app":"AdBlocker","version":"…"}</c></item>
-///   <item><c>GET /v1/check?host=ads.example.com</c> → <c>{"host":"ads.example.com","blocked":true}</c></item>
+///   <item><c>GET /v1/check?host=ads.example.com</c> → <c>{"host":"ads.example.com","blocked":true,"scam":false}</c></item>
 /// </list>
 /// It only listens on loopback, only answers requests addressed to 127.0.0.1/localhost
 /// (against DNS rebinding), refuses requests from web pages, and changes nothing.
@@ -28,14 +28,16 @@ public sealed class LocalApi : IAsyncDisposable
 
     private readonly TcpListener _listener;
     private readonly Func<string, bool> _isBlocked;
+    private readonly Func<string, bool> _isScam;
     private readonly CancellationTokenSource _stopping = new();
     private readonly SemaphoreSlim _connections = new(32);
     private readonly Task _loop;
 
-    private LocalApi(TcpListener listener, Func<string, bool> isBlocked)
+    private LocalApi(TcpListener listener, Func<string, bool> isBlocked, Func<string, bool> isScam)
     {
         _listener = listener;
         _isBlocked = isBlocked;
+        _isScam = isScam;
         Port = ((IPEndPoint)listener.LocalEndpoint).Port;
         _loop = Task.Run(AcceptAsync);
     }
@@ -43,7 +45,7 @@ public sealed class LocalApi : IAsyncDisposable
     public int Port { get; }
 
     /// <summary>Starts listening, or returns null (after logging why) if the port is not available.</summary>
-    public static LocalApi? TryStart(int port, Func<string, bool> isBlocked, ILog log)
+    public static LocalApi? TryStart(int port, Func<string, bool> isBlocked, Func<string, bool> isScam, ILog log)
     {
         var listener = new TcpListener(IPAddress.Loopback, port) { ExclusiveAddressUse = true };
         try
@@ -56,7 +58,7 @@ public sealed class LocalApi : IAsyncDisposable
             log.Warn($"The browser companion endpoint could not start on port {port}: {e.Message}");
             return null;
         }
-        return new LocalApi(listener, isBlocked);
+        return new LocalApi(listener, isBlocked, isScam);
     }
 
     /// <summary>Whether AdBlocker's endpoint, in this or another process, answers on <paramref name="port"/>.</summary>
@@ -164,11 +166,15 @@ public sealed class LocalApi : IAsyncDisposable
                 var requested = QueryValue(query, "host");
                 var name = requested is null ? null : RuleParser.NormalizeDomain(requested);
                 if (name is null) return (400, """{"error":"host must be a domain name"}""");
-                return (200, $$"""{"host":"{{name}}","blocked":{{(_isBlocked(name) ? "true" : "false")}}}""");
+                var blocked = _isBlocked(name);
+                var scam = blocked && _isScam(name);
+                return (200, $$"""{"host":"{{name}}","blocked":{{Json(blocked)}},"scam":{{Json(scam)}}}""");
             default:
                 return (404, """{"error":"not found"}""");
         }
     }
+
+    private static string Json(bool value) => value ? "true" : "false";
 
     private static bool IsExtensionOrigin(string origin) =>
         origin.StartsWith("chrome-extension://", StringComparison.OrdinalIgnoreCase)

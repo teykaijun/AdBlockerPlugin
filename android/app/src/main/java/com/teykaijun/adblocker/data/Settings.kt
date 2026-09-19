@@ -25,6 +25,11 @@ data class RemoteList(
     val description: String,
     val enabled: Boolean = false,
     val custom: Boolean = false,
+    /**
+     * A list of scam and fraud sites. A blocked shop or "free trial" looks like a broken
+     * website, so these are worth a warning rather than a silent block.
+     */
+    val scam: Boolean = false,
 ) {
     companion object {
         val PRESETS = listOf(
@@ -39,6 +44,21 @@ data class RemoteList(
                 title = "HaGeZi Pop-Up Ads",
                 url = "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/popupads.txt",
                 description = "Recommended. Blocks the scripts that open pop-up ads and redirect pages. About 50,000 domains.",
+            ),
+            RemoteList(
+                id = "hagezi-fake",
+                title = "HaGeZi Fake shops and scams",
+                url = "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/fake.txt",
+                description = "Recommended. Fake shops, subscription traps, rip-offs and fake streaming sites. " +
+                    "About 17,000 domains. AdBlocker warns you when one of these is blocked.",
+                scam = true,
+            ),
+            RemoteList(
+                id = "hagezi-tif-mini",
+                title = "HaGeZi Threat Intelligence (mini)",
+                url = "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/tif.mini.txt",
+                description = "Adds phishing, malware and fraud domains. About 180,000 domains, so it uses more memory.",
+                scam = true,
             ),
             RemoteList(
                 id = "hagezi-light",
@@ -61,7 +81,7 @@ data class RemoteList(
         )
 
         /** Community lists that are on until the user turns them off. */
-        val DEFAULT_ENABLED = setOf("hagezi-normal", "hagezi-popupads")
+        val DEFAULT_ENABLED = setOf("hagezi-normal", "hagezi-popupads", "hagezi-fake")
     }
 }
 
@@ -136,6 +156,7 @@ class SettingsStore(context: Context) {
         val added = buildSet {
             if (version < 2) add("hagezi-normal") // 1.1.0
             if (version < 3) add("hagezi-popupads") // 1.3.0
+            if (version < 4) add("hagezi-fake") // 1.4.0
         }
         prefs.edit {
             prefs.getStringSet(KEY_REMOTE_ENABLED, null)?.let { putStringSet(KEY_REMOTE_ENABLED, it + added) }
@@ -178,7 +199,7 @@ class SettingsStore(context: Context) {
     ).toString()
 
     private companion object {
-        const val CURRENT_VERSION = 3
+        const val CURRENT_VERSION = 4
         const val KEY_VERSION = "version"
         const val KEY_PROTECTION_ON = "protection_on"
         const val KEY_BUILTIN = "builtin_lists"

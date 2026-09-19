@@ -111,6 +111,26 @@ public class FilterListsTests : IDisposable
     }
 
     [Fact]
+    public void Tells_scam_sites_apart_from_ordinary_blocked_domains()
+    {
+        var lists = new FilterLists(_paths);
+        Directory.CreateDirectory(_paths.ListsDirectory);
+        File.WriteAllText(lists.CachedFile("hagezi-normal"), "||ads.example^\n");
+        File.WriteAllText(lists.CachedFile("hagezi-fake"), "||fake-shop.example^\n@@||real-shop.example^\n");
+
+        var scam = lists.BuildScamMatcher(new AppConfig());
+        Assert.True(scam.IsBlocked("fake-shop.example"));
+        Assert.True(scam.IsBlocked("pay.fake-shop.example"));
+        Assert.False(scam.IsBlocked("ads.example")); // blocked, but only an ad server
+        Assert.False(scam.IsBlocked("real-shop.example"));
+
+        // A domain the user allowed is not blocked at all, so it is never reported as a scam.
+        var allowing = new AppConfig { AllowedDomains = ["fake-shop.example"] };
+        Assert.False(lists.BuildScamMatcher(allowing).IsBlocked("fake-shop.example"));
+        Assert.False(lists.BuildMatcher(allowing).IsBlocked("fake-shop.example"));
+    }
+
+    [Fact]
     public void Merges_presets_with_the_users_community_list_settings()
     {
         var config = new AppConfig
@@ -129,6 +149,7 @@ public class FilterListsTests : IDisposable
         Assert.True(lists.Single(l => l.Id == "adguard-dns").Enabled);
         Assert.False(lists.Single(l => l.Id == "stevenblack").Enabled);
         Assert.True(lists.Single(l => l.Id == "hagezi-popupads").Enabled); // on by default
+        Assert.True(lists.Single(l => l.Id == "hagezi-fake").Enabled); // on by default
         var custom = lists.Single(l => l.Custom);
         Assert.Equal(("custom-1", "Mine", true), (custom.Id, custom.Title, custom.Enabled));
         Assert.Throws<ArgumentException>(() => new FilterLists(_paths).CachedFile("..\\evil"));

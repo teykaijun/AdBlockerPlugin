@@ -26,3 +26,15 @@ class DomainMatcher(private val blocked: Set<String>, private val allowed: Set<S
         val EMPTY = DomainMatcher(emptySet(), emptySet())
     }
 }
+
+/**
+ * What the VPN answers with: every rule in [matcher], and the subset from the scam lists in
+ * [scam], so a blocked scam site can be reported instead of just failing to load.
+ */
+data class Rules(val matcher: DomainMatcher, val scam: DomainMatcher) {
+    fun isScam(domain: String) = scam.isBlocked(domain) && matcher.isBlocked(domain)
+
+    companion object {
+        val EMPTY = Rules(DomainMatcher.EMPTY, DomainMatcher.EMPTY)
+    }
+}

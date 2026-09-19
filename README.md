@@ -7,6 +7,7 @@
 
 <p align="center">
   <a href="https://github.com/teykaijun/AdBlockerPlugin/releases/latest">Download</a> ·
+  <a href="#scam-and-fake-shop-warnings">Scam warnings</a> ·
   <a href="#windows">Windows</a> ·
   <a href="#browser-companion">Browser companion</a> ·
   <a href="#android">Android</a> ·
@@ -56,6 +57,29 @@ The blocking itself relies on excellent lists maintained by other people, especi
 [HaGeZi](https://github.com/hagezi/dns-blocklists), [AdGuard](https://github.com/AdguardTeam/AdGuardSDNSFilter)
 and [StevenBlack](https://github.com/StevenBlack/hosts). Many thanks to them.
 
+## Scam and fake shop warnings
+
+Ads are an annoyance; fake shops and subscription traps cost people money. AdBlocker carries
+HaGeZi's **Fake** list (about 17,000 fake shops, subscription traps, rip-offs and fake streaming
+sites) and tells you when one of them is blocked, because otherwise a scam site just looks like a
+website that happens to be down.
+
+- **Android:** a notification says which site it was and that it was not loaded, with an **Allow
+  anyway** button in case it's a false alarm. It appears at most once an hour per site. The
+  **Activity** screen marks these lookups as *Suspected scam*.
+- **Windows:** the [browser companion](#browser-companion) shows a desktop notification naming the
+  site, and its window counts them. In a terminal, `adblocker log` marks those lookups **SCAM**, and
+  `adblocker check <domain>` names the list.
+- If you trust a site, allow it: tap **Allow anyway**, use the Activity screen on Android, or run
+  `adblocker allow <domain>` on Windows.
+
+You can add HaGeZi's **Threat Intelligence (mini)** list in the Filters screen (or with
+`adblocker lists enable hagezi-tif-mini`) for phishing, malware and fraud domains too. It's off by
+default because it holds about 180,000 domains and uses more memory.
+
+These lists are made by people, not magic: a real shop can end up on one by mistake, and a brand new
+scam won't be on it yet. Treat a warning as a good reason to be careful, not as proof either way.
+
 ## Windows
 
 ### Install
@@ -88,8 +112,9 @@ Because AdBlocker works on DNS lookups, a page can still open an ad in a new tab
 an ad. The ad won't load, but you're left looking at "This site can't be reached". The optional
 **AdBlocker Companion** extension for Chrome, Edge and other Chromium-based browsers tidies this up:
 
-- a tab that a page opens to a blocked address is closed again, and
-- when a page sends your tab to a blocked address, the tab goes back to where you were.
+- a tab that a page opens to a blocked address is closed again,
+- when a page sends your tab to a blocked address, the tab goes back to where you were, and
+- when the address is a known scam or fake shop, a desktop notification says so.
 
 It asks AdBlocker on your PC whether an address is blocked, so it needs AdBlocker for Windows 1.3.0 or
 later to be running, and it does nothing without it. It doesn't block anything itself and doesn't send
@@ -127,7 +152,7 @@ Commands marked * need a terminal opened with **Run as administrator**.
 | `status` | Whether blocking is on, today's numbers, lists and network adapters |
 | `check <domain>` | Whether a domain is blocked, and by which list |
 | `block <domain>` * / `allow <domain>` * / `forget <domain>` * | Always block / never block a domain (and its subdomains) / remove your rule |
-| `log [-n 30] [-f]` | Recently blocked domains; `-f` keeps following |
+| `log [-n 30] [-f]` | Recently blocked domains, with known scam sites marked `SCAM`; `-f` keeps following |
 | `lists` | All lists and whether they're on |
 | `lists enable <id>` * / `lists disable <id>` * | Turn a built-in or community list on or off |
 | `lists add <url> [name]` * / `lists remove <id>` * | Add or remove a list of your own (hosts file or Adblock-style, `https://` only) |
@@ -148,7 +173,7 @@ Everything is kept in `C:\ProgramData\AdBlocker`, which only administrators and 
 | --- | --- |
 | `config.json` | Lists, your rules, DNS servers, `excludedAdapters`, `logAllowedQueries`. You can edit it by hand; the service reloads it automatically. |
 | `lists\` | Downloaded community lists |
-| `logs\queries.log` | Blocked lookups (and allowed ones if `logAllowedQueries` is `true`), rotated at 10 MB |
+| `logs\queries.log` | Blocked lookups, marked `BLOCKED` or `SCAM` (and allowed ones if `logAllowedQueries` is `true`), rotated at 10 MB |
 | `logs\service.log` | What the service did, and any errors |
 | `dns-backup.json` | Your network settings from before AdBlocker, used to restore them |
 
@@ -253,7 +278,7 @@ default) help too.
 | Screen | What you can do |
 | --- | --- |
 | **Home** | Turn protection on or off and see today's numbers |
-| **Activity** | Browse and search recent lookups; tap one to always allow or block it |
+| **Activity** | Browse and search recent lookups, with suspected scam sites marked; tap one to always allow or block it |
 | **Filters** | Turn lists on or off, add a list by URL, manage your blocked and allowed domains |
 | **Apps** | Let apps skip AdBlocker entirely, handy if one misbehaves |
 | **Settings** | Close blocked pop-up tabs, choose the DNS server, restart behaviour and Always-on VPN, and reset statistics |
@@ -291,6 +316,8 @@ Community lists are downloaded when turned on and refreshed weekly:
 | --- | --- | --- |
 | `hagezi-normal` | [HaGeZi Multi Normal](https://github.com/hagezi/dns-blocklists) (about 180,000 domains) | on |
 | `hagezi-popupads` | [HaGeZi Pop-Up Ads](https://github.com/hagezi/dns-blocklists): networks behind pop-up ads and redirects (about 50,000 domains) | on |
+| `hagezi-fake` | [HaGeZi Fake](https://github.com/hagezi/dns-blocklists): fake shops, subscription traps and rip-offs (about 17,000 domains). Blocks from these are [warned about](#scam-and-fake-shop-warnings). | on |
+| `hagezi-tif-mini` | [HaGeZi Threat Intelligence, mini](https://github.com/hagezi/dns-blocklists): phishing, malware and fraud (about 180,000 domains), also warned about | off |
 | `hagezi-light` | HaGeZi Multi Light | off |
 | `adguard-dns` | [AdGuard DNS filter](https://github.com/AdguardTeam/AdGuardSDNSFilter) | off |
 | `stevenblack` | [StevenBlack Unified hosts](https://github.com/StevenBlack/hosts) | off |
@@ -395,6 +422,7 @@ settings. The service runs as LocalSystem.
 | --- | --- |
 | `webNavigation` (shown as "Read your browsing history") | Notice when a page opens a tab, or a page fails to load |
 | `storage` | Keep the counts in its window until the browser closes |
+| `notifications` | Warn you when a blocked address is a known scam or fake shop |
 | Access to `http://127.0.0.1` | Ask AdBlocker for Windows whether an address is blocked |
 
 **Android**

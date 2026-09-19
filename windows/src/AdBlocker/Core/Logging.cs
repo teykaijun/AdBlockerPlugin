@@ -43,9 +43,12 @@ public sealed class FileLog(string path) : ILog
     }
 }
 
-public readonly record struct QueryEvent(DateTimeOffset Time, string Name, ushort Type, bool Blocked)
+public readonly record struct QueryEvent(DateTimeOffset Time, string Name, ushort Type, bool Blocked, bool Scam = false)
 {
-    public string Format() => $"{Time:yyyy-MM-dd HH:mm:ss}  {(Blocked ? "BLOCKED" : "allowed")}  {DnsMessage.TypeName(Type),-5}  {Name}";
+    /// <summary>BLOCKED, SCAM (blocked and on a scam list) or allowed.</summary>
+    public string Status => Scam ? "SCAM" : Blocked ? "BLOCKED" : "allowed";
+
+    public string Format() => $"{Time:yyyy-MM-dd HH:mm:ss}  {Status,-7}  {DnsMessage.TypeName(Type),-5}  {Name}";
 }
 
 /// <summary>

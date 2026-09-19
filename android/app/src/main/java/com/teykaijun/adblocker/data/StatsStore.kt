@@ -7,7 +7,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-data class QueryEvent(val id: Long, val time: Long, val domain: String, val blocked: Boolean)
+data class QueryEvent(val id: Long, val time: Long, val domain: String, val blocked: Boolean, val scam: Boolean = false)
 
 data class Totals(
     val blockedToday: Long = 0,
@@ -43,7 +43,7 @@ class StatsStore(context: Context) {
     /** Newest first. */
     val recent: StateFlow<List<QueryEvent>> = recentState.asStateFlow()
 
-    fun record(domain: String, blocked: Boolean) {
+    fun record(domain: String, blocked: Boolean, scam: Boolean = false) {
         synchronized(lock) {
             rollOverIfNewDay()
             queriesToday++
@@ -52,7 +52,7 @@ class StatsStore(context: Context) {
                 blockedToday++
                 blockedTotal++
             }
-            recentEvents.addFirst(QueryEvent(nextId++, System.currentTimeMillis(), domain, blocked))
+            recentEvents.addFirst(QueryEvent(nextId++, System.currentTimeMillis(), domain, blocked, scam))
             if (recentEvents.size > RECENT_LIMIT) recentEvents.removeLast()
             dirty = true
         }

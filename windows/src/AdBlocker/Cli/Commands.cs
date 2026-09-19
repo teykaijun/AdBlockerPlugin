@@ -735,7 +735,8 @@ internal static class Commands
 
     private static void PrintLogLine(string line)
     {
-        if (line.Contains("  BLOCKED  ", StringComparison.Ordinal)) Terminal.Warn(line);
+        if (line.Contains("  SCAM     ", StringComparison.Ordinal)) Terminal.Error(line);
+        else if (line.Contains("  BLOCKED  ", StringComparison.Ordinal)) Terminal.Warn(line);
         else Terminal.Dim(line);
     }
 

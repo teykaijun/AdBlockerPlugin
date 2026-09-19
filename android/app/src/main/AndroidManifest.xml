@@ -94,6 +94,11 @@
                 android:resource="@xml/tab_closer_service" />
         </service>
 
+        <!-- The "Allow anyway" button on a scam warning; only this app's notifications send it. -->
+        <receiver
+            android:name=".vpn.AllowSiteReceiver"
+            android:exported="false" />
+
         <receiver
             android:name=".vpn.BootReceiver"
             android:exported="true">

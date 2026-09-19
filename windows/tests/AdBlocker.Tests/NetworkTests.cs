@@ -210,6 +210,7 @@ public class BlockerTests : IDisposable
             // No downloads during the test.
             c.CommunityLists.Add(new CommunityListSetting { Id = "hagezi-normal", Enabled = false });
             c.CommunityLists.Add(new CommunityListSetting { Id = "hagezi-popupads", Enabled = false });
+            c.CommunityLists.Add(new CommunityListSetting { Id = "hagezi-fake", Enabled = false });
         });
 
         var port = TestDns.FreePort();
@@ -225,7 +226,7 @@ public class BlockerTests : IDisposable
         using (var http = new HttpClient())
         {
             var check = await http.GetStringAsync($"http://127.0.0.1:{apiPort}/v1/check?host=pagead2.googlesyndication.com");
-            Assert.Equal("""{"host":"pagead2.googlesyndication.com","blocked":true}""", check);
+            Assert.Equal("""{"host":"pagead2.googlesyndication.com","blocked":true,"scam":false}""", check);
         }
 
         var blocked = await TestDns.QueryUdpAsync(server, DnsMessage.BuildQuery(1, "pagead2.googlesyndication.com", DnsMessage.TypeA));
@@ -264,6 +265,7 @@ public class BlockerTests : IDisposable
             c.Upstream = [$"127.0.0.2:{TestDns.FreePort()}"]; // nothing listens there
             c.CommunityLists.Add(new CommunityListSetting { Id = "hagezi-normal", Enabled = false });
             c.CommunityLists.Add(new CommunityListSetting { Id = "hagezi-popupads", Enabled = false });
+            c.CommunityLists.Add(new CommunityListSetting { Id = "hagezi-fake", Enabled = false });
         });
         var port = TestDns.FreePort();
         var log = new TestLog();

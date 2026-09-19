@@ -20,14 +20,21 @@ async function showStats() {
   if (!stats) return;
   $('closed').textContent = stats.closed.toLocaleString();
   $('redirects').textContent = stats.redirects.toLocaleString();
+  if (stats.scams > 0) {
+    const scams = $('scams');
+    scams.textContent = `${stats.scams.toLocaleString()} suspected scam ${stats.scams === 1 ? 'site' : 'sites'} blocked.`;
+    scams.hidden = false;
+  }
   if (stats.recent.length === 0) return;
 
-  const items = stats.recent.map(({ kind, host, time }) => {
+  const items = stats.recent.map(({ kind, host, scam, time }) => {
     const item = document.createElement('li');
+    if (scam) item.className = 'scam';
     const when = document.createElement('time');
     when.textContent = new Date(time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const what = document.createElement('span');
-    what.textContent = `${kind === 'closed' ? 'Closed' : 'Went back from'} ${host}`;
+    const did = kind === 'closed' ? 'Closed' : 'Went back from';
+    what.textContent = scam ? `Scam site: ${host}` : `${did} ${host}`;
     item.append(when, what);
     return item;
   });

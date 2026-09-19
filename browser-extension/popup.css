@@ -115,6 +115,20 @@ li.empty {
   color: var(--muted);
 }
 
+li.scam span {
+  color: var(--warn);
+  font-weight: 600;
+}
+
+.scams {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--warn);
+  font-weight: 600;
+}
+
 footer {
   display: flex;
   justify-content: space-between;

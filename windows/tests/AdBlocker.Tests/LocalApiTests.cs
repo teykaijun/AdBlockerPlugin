@@ -12,7 +12,11 @@ public class LocalApiTests : IAsyncLifetime
 
     public Task InitializeAsync()
     {
-        _api = LocalApi.TryStart(0, host => host is "ads.example.com" or "tracker.example.net", new SilentLog())
+        _api = LocalApi.TryStart(
+                   0,
+                   host => host is "ads.example.com" or "tracker.example.net" or "fake-shop.example",
+                   host => host is "fake-shop.example",
+                   new SilentLog())
                ?? throw new InvalidOperationException("Could not start the endpoint.");
         return Task.CompletedTask;
     }
@@ -20,16 +24,18 @@ public class LocalApiTests : IAsyncLifetime
     public async Task DisposeAsync() => await _api.DisposeAsync();
 
     [Theory]
-    [InlineData("ads.example.com", true)]
-    [InlineData("ADS.Example.com.", true)]
-    [InlineData("news.example.com", false)]
-    public async Task Answers_whether_a_host_is_blocked(string host, bool blocked)
+    [InlineData("ads.example.com", true, false)]
+    [InlineData("ADS.Example.com.", true, false)]
+    [InlineData("news.example.com", false, false)]
+    [InlineData("fake-shop.example", true, true)]
+    public async Task Answers_whether_a_host_is_blocked(string host, bool blocked, bool scam)
     {
         using var http = new HttpClient();
         var response = await http.GetAsync($"http://127.0.0.1:{Port}/v1/check?host={Uri.EscapeDataString(host)}");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("application/json", response.Content.Headers.ContentType?.MediaType);
-        var expected = $$"""{"host":"{{host.ToLowerInvariant().TrimEnd('.')}}","blocked":{{(blocked ? "true" : "false")}}}""";
+        var json = (Blocked: blocked ? "true" : "false", Scam: scam ? "true" : "false");
+        var expected = $$"""{"host":"{{host.ToLowerInvariant().TrimEnd('.')}}","blocked":{{json.Blocked}},"scam":{{json.Scam}}}""";
         Assert.Equal(expected, await response.Content.ReadAsStringAsync());
     }
 
@@ -112,7 +118,7 @@ public class LocalApiTests : IAsyncLifetime
     public void Reports_a_taken_port()
     {
         var log = new SilentLog();
-        Assert.Null(LocalApi.TryStart(Port, _ => false, log));
+        Assert.Null(LocalApi.TryStart(Port, _ => false, _ => false, log));
         Assert.Contains(log.Warnings, w => w.Contains($"port {Port}"));
     }
 

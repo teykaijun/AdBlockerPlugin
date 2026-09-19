@@ -5,29 +5,45 @@ const CACHE_MS = 60_000;
 const MAX_CACHED = 2_000;
 const MAX_RECENT = 20;
 
-/** host → { blocked: Promise<boolean>, until } */
+/** host → { answer: Promise<{ blocked, scam }>, until } */
 const answers = new Map();
 
-function isBlocked(host) {
+function answerFor(host) {
   const cached = answers.get(host);
-  if (cached && cached.until > Date.now()) return cached.blocked;
+  if (cached && cached.until > Date.now()) return cached.answer;
 
-  const blocked = ask(host);
+  const answer = ask(host);
   answers.delete(host);
   if (answers.size >= MAX_CACHED) answers.delete(answers.keys().next().value);
-  answers.set(host, { blocked, until: Date.now() + CACHE_MS });
-  return blocked;
+  answers.set(host, { answer, until: Date.now() + CACHE_MS });
+  return answer;
 }
 
 async function ask(host) {
   try {
     const answer = await get(`/check?host=${encodeURIComponent(host)}`);
-    return answer.blocked === true;
+    return { blocked: answer.blocked === true, scam: answer.scam === true };
   } catch {
     // AdBlocker isn't running: do nothing rather than guess, and ask again next time.
     answers.delete(host);
-    return false;
+    return { blocked: false, scam: false };
   }
+}
+
+async function isBlocked(host) {
+  return (await answerFor(host)).blocked;
+}
+
+/** Scam sites look like broken websites, so say what happened. */
+function warnAboutScam(host) {
+  chrome.notifications.create(`scam:${host}:${Date.now()}`, {
+    type: 'basic',
+    iconUrl: chrome.runtime.getURL('icons/icon-128.png'),
+    title: 'AdBlocker blocked a suspected scam site',
+    message: `${host} is listed as a fake shop, subscription trap or similar scam.`,
+    contextMessage: 'If you trust it, run: adblocker allow ' + host,
+    priority: 2,
+  });
 }
 
 // Reports can arrive together; apply them one at a time.
@@ -36,12 +52,15 @@ let reporting = Promise.resolve();
 function report(kind, host) {
   reporting = reporting
     .then(async () => {
-      const { stats = { closed: 0, redirects: 0, recent: [] } } = await chrome.storage.session.get('stats');
+      const { scam } = await answerFor(host);
+      const { stats = { closed: 0, redirects: 0, scams: 0, recent: [] } } = await chrome.storage.session.get('stats');
       if (kind === 'closed') stats.closed += 1;
       else stats.redirects += 1;
-      stats.recent = [{ kind, host, time: Date.now() }, ...stats.recent].slice(0, MAX_RECENT);
+      if (scam) stats.scams = (stats.scams ?? 0) + 1;
+      stats.recent = [{ kind, host, scam, time: Date.now() }, ...stats.recent].slice(0, MAX_RECENT);
       await chrome.storage.session.set({ stats });
       await chrome.action.setBadgeText({ text: String(stats.closed + stats.redirects) });
+      if (scam) warnAboutScam(host);
     })
     .catch(() => {});
 }

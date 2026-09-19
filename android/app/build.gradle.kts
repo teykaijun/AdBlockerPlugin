@@ -25,8 +25,8 @@ android {
         minSdk = 26
         // Android 16 is the newest release whose behaviour changes this app was checked against.
         targetSdk = 36
-        versionCode = 4
-        versionName = "1.3.0"
+        versionCode = 5
+        versionName = "1.4.0"
     }
 
     // The built-in blocklists are shared with the Windows app and live in the

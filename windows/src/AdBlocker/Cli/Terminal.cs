@@ -29,8 +29,8 @@ internal static class Terminal
 
     /// <summary>One line per lookup while <c>adblocker run</c> is active.</summary>
     public static void Query(QueryEvent query) =>
-        Write(query.Blocked ? ConsoleColor.Red : ConsoleColor.DarkGray,
-            $"{query.Time:HH:mm:ss}  {(query.Blocked ? "blocked" : "allowed")}  {query.Name}");
+        Write(query.Scam ? ConsoleColor.Yellow : query.Blocked ? ConsoleColor.Red : ConsoleColor.DarkGray,
+            $"{query.Time:HH:mm:ss}  {(query.Scam ? "SCAM   " : query.Blocked ? "blocked" : "allowed")}  {query.Name}");
 
     /// <summary>Two-column "label  value" lines.</summary>
     public static void Pairs(params (string Label, string Value)[] pairs)

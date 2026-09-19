@@ -30,7 +30,7 @@ class TabCloserService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
         val browser = event.packageName?.toString() ?: return
         val barId = Browsers.ADDRESS_BARS[browser] ?: return
-        val matcher = VpnController.matcher ?: return
+        val rules = VpnController.rules ?: return
         // A bypassed browser uses the normal DNS, so its pages load; leave them.
         if (browser in app.settings.settings.value.bypassApps) return
 
@@ -44,10 +44,12 @@ class TabCloserService : AccessibilityService() {
         }
 
         val window = root.windowId
-        val host = guard.onAddressBar(browser, window, reading, matcher::isBlocked) ?: return
+        val host = guard.onAddressBar(browser, window, reading, rules.matcher::isBlocked) ?: return
         if (!performGlobalAction(GLOBAL_ACTION_BACK)) return
         TabCloser.recordLeft(host)
-        Toast.makeText(this, "AdBlocker left a blocked page: $host", Toast.LENGTH_SHORT).show()
+        // The scam warning notification explains the rest.
+        val message = if (rules.isScam(host)) "AdBlocker left a suspected scam site: $host" else "AdBlocker left a blocked page: $host"
+        Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
         handler.postDelayed({
             // No active window means a transition is still running; that tells us nothing.
             val active = rootInActiveWindow ?: return@postDelayed

@@ -5,6 +5,7 @@ import androidx.core.content.edit
 import com.teykaijun.adblocker.BuildConfig
 import com.teykaijun.adblocker.dns.DomainMatcher
 import com.teykaijun.adblocker.dns.RuleParser
+import com.teykaijun.adblocker.dns.Rules
 import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection
@@ -60,18 +61,23 @@ class FilterRepository(
     private val revisionState = MutableStateFlow(0)
     val revision: StateFlow<Int> = revisionState.asStateFlow()
 
-    suspend fun buildMatcher(settings: Settings): DomainMatcher = withContext(Dispatchers.IO) {
+    suspend fun buildRules(settings: Settings): Rules = withContext(Dispatchers.IO) {
         val blocked = HashSet<String>(4_096)
         val allowed = HashSet<String>()
+        val scamBlocked = HashSet<String>()
+        val scamAllowed = HashSet<String>()
         for (list in builtIn) {
             if (settings.isBuiltInEnabled(list)) readBuiltIn(list.id, blocked, allowed)
         }
         for (list in settings.remoteLists) {
             val file = fileFor(list.id)
-            if (list.enabled && file.exists()) {
-                file.bufferedReader().useLines { RuleParser.parseInto(it, blocked, allowed) }
-            }
+            if (!list.enabled || !file.exists()) continue
+            // Scam lists are parsed into their own sets first; both sets share the same strings.
+            val into = if (list.scam) scamBlocked to scamAllowed else blocked to allowed
+            file.bufferedReader().useLines { RuleParser.parseInto(it, into.first, into.second) }
         }
+        blocked += scamBlocked
+        allowed += scamAllowed
         // Tells Firefox not to switch to its own DNS-over-HTTPS, which would skip the filter.
         blocked += FIREFOX_DOH_CANARY
         allowed -= FIREFOX_DOH_CANARY
@@ -79,7 +85,7 @@ class FilterRepository(
         blocked += settings.blockedDomains
         allowed -= settings.blockedDomains
         allowed += settings.allowedDomains
-        DomainMatcher(blocked, allowed)
+        Rules(DomainMatcher(blocked, allowed), DomainMatcher(scamBlocked, scamAllowed + settings.allowedDomains))
     }
 
     private fun readBuiltIn(id: String, blocked: MutableSet<String>, allowed: MutableSet<String>) {

@@ -12,7 +12,11 @@ public sealed class BuiltInListInfo
     public bool EnabledByDefault { get; set; }
 }
 
-public sealed record CommunityList(string Id, string Title, string Url, string Description, bool Enabled, bool Custom);
+/// <param name="Scam">
+/// A list of scam and fraud sites. Domains from these are worth warning about, because a
+/// blocked shop or "free trial" looks like a broken website rather than a lucky escape.
+/// </param>
+public sealed record CommunityList(string Id, string Title, string Url, string Description, bool Enabled, bool Custom, bool Scam = false);
 
 public sealed class ListStatus
 {
@@ -40,6 +44,12 @@ public sealed class FilterLists(AppPaths paths)
             "Recommended. About 180,000 ad, tracker and telemetry domains.", Enabled: true, Custom: false),
         new("hagezi-popupads", "HaGeZi Pop-Up Ads", "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/popupads.txt",
             "Recommended. Blocks the scripts that open pop-up ads and redirect pages. About 50,000 domains.", Enabled: true, Custom: false),
+        new("hagezi-fake", "HaGeZi Fake shops and scams", "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/fake.txt",
+            "Recommended. Fake shops, subscription traps, rip-offs and fake streaming sites. About 17,000 domains.",
+            Enabled: true, Custom: false, Scam: true),
+        new("hagezi-tif-mini", "HaGeZi Threat Intelligence (mini)", "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/tif.mini.txt",
+            "Adds phishing, malware and fraud domains. About 180,000 domains, so it uses more memory.",
+            Enabled: false, Custom: false, Scam: true),
         new("hagezi-light", "HaGeZi Multi Light", "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/light.txt",
             "A smaller list with very few false positives.", Enabled: false, Custom: false),
         new("adguard-dns", "AdGuard DNS filter", "https://adguardteam.github.io/HostlistsRegistry/assets/filter_1.txt",
@@ -99,6 +109,26 @@ public sealed class FilterLists(AppPaths paths)
             blocked.Add(domain);
             allowed.Remove(domain);
         }
+        foreach (var domain in NormalizeAll(config.AllowedDomains)) allowed.Add(domain);
+        return new DomainMatcher(blocked, allowed);
+    }
+
+    /// <summary>
+    /// Only the domains from the enabled scam lists, so a blocked lookup can be reported as
+    /// "this site is a known scam" instead of just failing.
+    /// </summary>
+    public DomainMatcher BuildScamMatcher(AppConfig config)
+    {
+        var blocked = new HashSet<string>(StringComparer.Ordinal);
+        var allowed = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var list in CommunityLists(config).Where(l => l is { Enabled: true, Scam: true }))
+        {
+            var file = CachedFile(list.Id);
+            if (!File.Exists(file)) continue;
+            using var reader = File.OpenText(file);
+            RuleParser.ParseInto(reader, blocked, allowed);
+        }
+        // A site the user allows is not blocked at all, so it can never be reported.
         foreach (var domain in NormalizeAll(config.AllowedDomains)) allowed.Add(domain);
         return new DomainMatcher(blocked, allowed);
     }
