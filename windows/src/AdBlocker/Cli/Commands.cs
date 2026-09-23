@@ -53,6 +53,7 @@ internal static class Commands
                 "forget" => ForgetRule(rest),
                 "check" => Check(rest),
                 "dns" => Dns(rest),
+                "lan" => Lan(rest),
                 "log" => await Log(rest),
                 "stats" when rest.FirstOrDefault() == "reset" => ResetStats(),
                 "doctor" => Doctor(rest),
@@ -81,7 +82,7 @@ internal static class Commands
 
     private static async Task<int> Run(string[] args)
     {
-        var options = new Arguments(args, valued: ["--port"], flags: ["--verbose", "-v", "--no-system-dns"]);
+        var options = new Arguments(args, valued: ["--port"], flags: ["--verbose", "-v", "--no-system-dns", "--lan"]);
         options.NoMoreThan(0);
         var manageDns = !options.Flag("--no-system-dns");
         var port = options.Int("--port", 53, 1, 65_535);
@@ -101,6 +102,7 @@ internal static class Commands
             Port = port,
             ManageSystemDns = manageDns,
             Verbose = options.Flag("--verbose", "-v"),
+            ListenOnLan = options.Flag("--lan") ? true : null,
             Echo = Terminal.Query,
         }, new ConsoleLog());
 
@@ -191,6 +193,7 @@ internal static class Commands
         Elevation.Require("uninstall");
 
         ServiceManager.Uninstall();
+        Firewall.Remove();
         var restored = new SystemDns(Paths).Restore();
         if (restored.Count > 0) Terminal.Line($"Restored DNS settings of {string.Join(", ", restored)}.");
         Terminal.Ok("AdBlocker is uninstalled.");
@@ -326,6 +329,11 @@ internal static class Commands
             Terminal.Line($"  {adapter.Name}: DNS {dns}");
         }
         Terminal.Line($"  Allowed lookups go to: {string.Join(", ", config.Upstream)}");
+        if (config.ListenOnLan)
+        {
+            var own = LocalNetwork.OwnAddresses();
+            Terminal.Line($"  Other devices can use: {(own.Count > 0 ? string.Join(", ", own) : "no network address yet")}");
+        }
 
         PrintBrowserProblems();
         return 0;
@@ -403,6 +411,12 @@ internal static class Commands
         if (!live && IsPortTaken(53))
         {
             Problem("Another program is using DNS port 53, so AdBlocker cannot start. Mobile hotspot and Internet Connection Sharing do this.");
+        }
+
+        if (config.ListenOnLan && !Firewall.Exists())
+        {
+            Problem("AdBlocker is set to answer other devices, but the firewall rule is missing, so they cannot reach it. " +
+                    "Run \"adblocker lan on\" as administrator.");
         }
 
         if (live && !LocalApi.IsAnsweringAsync(LocalApi.DefaultPort).GetAwaiter().GetResult())
@@ -746,6 +760,58 @@ internal static class Commands
         return 0;
     }
 
+    /// <summary>Serves DNS to phones and other devices on the local network, or stops doing so.</summary>
+    private static int Lan(string[] args)
+    {
+        var options = new Arguments(args, [], []);
+        options.NoMoreThan(1);
+        var config = ConfigStore.Load(Paths);
+        var action = options.Positional.FirstOrDefault()?.ToLowerInvariant();
+        if (action is null)
+        {
+            PrintLanState(config.ListenOnLan);
+            Terminal.Dim("Change it with \"adblocker lan on\" or \"adblocker lan off\" (as administrator).");
+            return 0;
+        }
+        if (action is not ("on" or "off")) throw new UserError($"Unknown option \"{action}\". Use \"adblocker lan on\" or \"adblocker lan off\".");
+
+        var wanted = action == "on";
+        Elevation.Require($"lan {action}");
+        ConfigStore.Update(Paths, c => c.ListenOnLan = wanted);
+        if (wanted) Firewall.Allow(53); else Firewall.Remove();
+
+        if (ServiceManager.IsRunning)
+        {
+            Terminal.Line("Restarting AdBlocker so it listens differently...");
+            ServiceManager.Stop();
+            StartAndConfirm();
+        }
+        PrintLanState(wanted);
+        if (wanted)
+        {
+            Terminal.Line();
+            Terminal.Line("On the phone: Wi-Fi settings, this network, set DNS to manual and enter the address above.");
+            Terminal.Dim("Ads are only blocked while this PC is on and the phone is on this network.");
+        }
+        return 0;
+    }
+
+    private static void PrintLanState(bool on)
+    {
+        if (!on)
+        {
+            Terminal.Ok("AdBlocker only answers this PC.");
+            return;
+        }
+        var addresses = LocalNetwork.OwnAddresses();
+        Terminal.Ok("AdBlocker answers other devices on your network.");
+        Terminal.Pairs(("This PC", addresses.Count > 0 ? string.Join(", ", addresses) : "no network address yet"));
+        if (!Firewall.Exists())
+        {
+            Terminal.Warn("  The firewall rule is missing, so devices cannot reach it. Run \"adblocker lan on\" as administrator.");
+        }
+    }
+
     private static int ResetStats()
     {
         Elevation.Require("stats reset");
@@ -854,6 +920,7 @@ internal static class Commands
                   --verbose          Also show allowed lookups
                   --no-system-dns    Don't change network settings (for testing)
                   --port <n>         Listen on another port (only with --no-system-dns)
+                  --lan              Also answer other devices on the local network
 
             Everyday
               status                 Is blocking on? Today's numbers, lists and adapters
@@ -870,6 +937,8 @@ internal static class Commands
               lists add <url> [name] *   Add a hosts file or Adblock-style list by https:// URL
               lists remove <id> *    Remove a list you added
               update *               Download the latest community lists now
+              lan [on|off] *         Also answer phones and other devices on your network
+                                     (an iPhone can then use this PC as its DNS server)
               dns [server...] *      Show, or set, where allowed lookups go:
                                      auto (your network's DNS, the default), cloudflare, quad9,
                                      google (these three use encrypted DNS), an IP address or an https:// URL

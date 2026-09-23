@@ -10,6 +10,7 @@
   <a href="#scam-and-fake-shop-warnings">Scam warnings</a> ·
   <a href="#keeping-it-up-to-date">Updates</a> ·
   <a href="#windows">Windows</a> ·
+  <a href="#iphone-ipad-and-other-devices">iPhone</a> ·
   <a href="#browser-companion">Browser companion</a> ·
   <a href="#android">Android</a> ·
   <a href="#support">Support development ☕</a>
@@ -23,7 +24,7 @@ something stops working, I'd be grateful if you [opened an issue](https://github
 |  | Windows | Android |
 | --- | --- | --- |
 | **What it is** | A console app that runs quietly as a Windows service | An app with a local VPN |
-| **Where it helps** | Chrome, Edge, Firefox and other apps on the PC | Apps, games and browsers on the phone |
+| **Where it helps** | Chrome, Edge, Firefox and other apps on the PC, and [phones on your Wi-Fi](#iphone-ipad-and-other-devices) | Apps, games and browsers on the phone |
 | **How** | Filters DNS lookups on `127.0.0.1` | Filters DNS lookups through a VPN that carries nothing else |
 | **Download** | [`adblocker.exe`](https://github.com/teykaijun/AdBlockerPlugin/releases/latest/download/adblocker.exe), plus the optional [`AdBlocker-Companion.zip`](https://github.com/teykaijun/AdBlockerPlugin/releases/latest/download/AdBlocker-Companion.zip) for Chrome and Edge | [`AdBlocker.apk`](https://github.com/teykaijun/AdBlockerPlugin/releases/latest/download/AdBlocker.apk) |
 
@@ -158,6 +159,7 @@ Commands marked * need a terminal opened with **Run as administrator**.
 | `lists enable <id>` * / `lists disable <id>` * | Turn a built-in or community list on or off |
 | `lists add <url> [name]` * / `lists remove <id>` * | Add or remove a list of your own (hosts file or Adblock-style, `https://` only) |
 | `update` * | Download the latest community lists now (they also update weekly on their own) |
+| `lan [on\|off]` * | Also answer phones and other devices on your network, so an [iPhone can use this PC](#iphone-ipad-and-other-devices) as its DNS server |
 | `dns [server...]` * | Show or choose where allowed lookups go: `auto` (your network's DNS, the default), `cloudflare`, `quad9`, `google` (these three use encrypted DNS over HTTPS), an IP address, or an `https://` DNS-over-HTTPS URL |
 | `upgrade [--check]` * | Download the latest version from GitHub, check it against the published checksum, and install it (`--check` only reports whether one is available) |
 | `doctor` | Look for settings that might let ads slip past, and check that the browser companion can reach AdBlocker |
@@ -173,7 +175,7 @@ Everything is kept in `C:\ProgramData\AdBlocker`, which only administrators and 
 
 | File | Contents |
 | --- | --- |
-| `config.json` | Lists, your rules, DNS servers, `excludedAdapters`, `logAllowedQueries`. You can edit it by hand; the service reloads it automatically. |
+| `config.json` | Lists, your rules, DNS servers, `excludedAdapters`, `logAllowedQueries`, `listenOnLan`, `checkForUpdates`. You can edit it by hand; the service reloads it automatically. |
 | `lists\` | Downloaded community lists |
 | `logs\queries.log` | Blocked lookups, marked `BLOCKED` or `SCAM` (and allowed ones if `logAllowedQueries` is `true`), rotated at 10 MB |
 | `logs\service.log` | What the service did, and any errors |
@@ -212,6 +214,10 @@ Everything is kept in `C:\ProgramData\AdBlocker`, which only administrators and 
 - A tiny HTTP endpoint on `127.0.0.1:45353` answers the browser companion's "is this address
   blocked?" questions (`GET /v1/check?host=…`). It only answers requests addressed to `127.0.0.1` or
   `localhost`, turns away requests from web pages, and can't change anything.
+- With `adblocker lan on` the DNS server also binds the other network addresses, and then answers
+  only clients on private ranges (`10.x`, `172.16–31.x`, `192.168.x`, `169.254.x`, `100.64–127.x`,
+  IPv6 link-local and unique-local). The firewall rule it adds covers private and domain networks
+  only, so AdBlocker stays unreachable on public Wi-Fi. It can't become an open resolver.
 
 ## Android
 
@@ -301,6 +307,38 @@ There's also a Quick Settings tile and a status notification with a **Pause** bu
   browsers. It reads the address bar by its view id, checks the host against the same rules the VPN
   uses, and performs the system Back action. The decisions (act once per address, leave typed
   addresses alone, stop on redirect loops) live in `TabGuard`, which has its own unit tests.
+
+## iPhone, iPad and other devices
+
+There's no AdBlocker app for iOS, and I can't honestly promise one: building an iPhone app needs a
+Mac with Xcode, and handing it to anyone else needs Apple's Developer Program at $99 a year plus App
+Review, since iOS has nothing like installing an APK. On top of that, the clean DNS filtering API on
+iOS ([`NEDNSProxyProvider`](https://developer.apple.com/documentation/networkextension/nednsproxyprovider))
+only runs on company-supervised devices.
+
+What does work today:
+
+**Use this PC as your phone's DNS server.** On the PC, run `adblocker lan on` as administrator. It
+tells you the address to use, opens the firewall for private networks only, and restarts the service.
+Then on the iPhone: **Settings → Wi-Fi → (i) next to your network → Configure DNS → Manual**, remove
+what's there, **Add Server**, and type the PC's address. Android phones, tablets, smart TVs and
+consoles can be pointed at it the same way.
+
+- It only works on that Wi-Fi, while the PC is switched on. Mobile data is untouched.
+- Turn off **iCloud Private Relay** (Settings → your name → iCloud) if you use it, or Safari's
+  lookups go around AdBlocker.
+- `adblocker lan off` puts everything back and removes the firewall rule, as does `uninstall`.
+
+**Or use a filtering DNS service.** [NextDNS](https://nextdns.io), [AdGuard DNS](https://adguard-dns.io)
+and similar services filter in the cloud and install as an encrypted DNS profile, so they also work
+on mobile data. NextDNS can enable the very same HaGeZi lists this project uses. That's the closest
+thing to AdBlocker on a phone that leaves the house.
+
+**And a Safari content blocker** (1Blocker, AdGuard, Wipr) for the ads inside Safari pages, which DNS
+filtering can't tidy up.
+
+If you have a Mac and fancy maintaining an iOS build, I'd be glad to hear from you in
+[Issues](https://github.com/teykaijun/AdBlockerPlugin/issues).
 
 ## Keeping it up to date
 

@@ -8,7 +8,14 @@ namespace AdBlocker.Dns;
 /// the answer (or null to stay silent). Oversized UDP answers are truncated so the
 /// client retries over TCP.
 /// </summary>
-public sealed class DnsServer(IReadOnlyList<IPEndPoint> endpoints, Func<byte[], CancellationToken, Task<byte[]?>> handler) : IAsyncDisposable
+/// <param name="acceptClient">
+/// Which clients are answered. Null answers everyone, which is only safe while listening on
+/// loopback; serving the local network passes <see cref="LocalNetwork.IsPrivate"/> here.
+/// </param>
+public sealed class DnsServer(
+    IReadOnlyList<IPEndPoint> endpoints,
+    Func<byte[], CancellationToken, Task<byte[]?>> handler,
+    Func<IPAddress, bool>? acceptClient = null) : IAsyncDisposable
 {
     // Stops Windows from failing the next receive with WSAECONNRESET after an ICMP "port unreachable".
     private const int SioUdpConnReset = -1744830452;
@@ -85,11 +92,15 @@ public sealed class DnsServer(IReadOnlyList<IPEndPoint> endpoints, Func<byte[], 
                 break;
             }
 
+            if (!Accepts(received.RemoteEndPoint)) continue;
             var query = buffer.AsSpan(0, received.ReceivedBytes).ToArray();
             if (!_pendingQueries.Wait(0)) continue; // overloaded: the client will retry
             _ = AnswerUdpAsync(socket, query, received.RemoteEndPoint, token);
         }
     }
+
+    private bool Accepts(EndPoint? client) =>
+        acceptClient is null || (client is IPEndPoint endpoint && acceptClient(endpoint.Address));
 
     private async Task AnswerUdpAsync(Socket socket, byte[] query, EndPoint client, CancellationToken token)
     {
@@ -131,7 +142,7 @@ public sealed class DnsServer(IReadOnlyList<IPEndPoint> endpoints, Func<byte[], 
                 break;
             }
 
-            if (!_tcpConnections.Wait(0))
+            if (!Accepts(client.Client.RemoteEndPoint) || !_tcpConnections.Wait(0))
             {
                 client.Dispose();
                 continue;

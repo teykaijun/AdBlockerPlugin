@@ -37,6 +37,13 @@ public sealed class AppConfig
 
     /// <summary>Ask GitHub once a day whether a newer AdBlocker is out, and say so in "status".</summary>
     public bool CheckForUpdates { get; set; } = true;
+
+    /// <summary>
+    /// Also answer DNS for other devices on the local network (phones, tablets, TVs), so an
+    /// iPhone can point its Wi-Fi DNS at this PC. Only private addresses are ever answered.
+    /// Switch it on with "adblocker lan on", which also opens the firewall for private networks.
+    /// </summary>
+    public bool ListenOnLan { get; set; }
 }
 
 /// <summary>What the last update check found, kept in update.json for "status" to show.</summary>

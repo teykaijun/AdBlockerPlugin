@@ -126,12 +126,47 @@ public class UpstreamTests
 
 public class DnsServerTests
 {
-    private static async Task<(DnsServer Server, IPEndPoint Endpoint)> StartAsync(Func<byte[], Task<byte[]?>> handler)
+    private static async Task<(DnsServer Server, IPEndPoint Endpoint)> StartAsync(
+        Func<byte[], Task<byte[]?>> handler,
+        Func<IPAddress, bool>? acceptClient = null)
     {
-        var server = new DnsServer([new IPEndPoint(IPAddress.Loopback, 0)], (query, _) => handler(query));
+        var server = new DnsServer([new IPEndPoint(IPAddress.Loopback, 0)], (query, _) => handler(query), acceptClient);
         server.Start();
         await Task.Yield();
         return (server, server.BoundEndpoints[0]);
+    }
+
+    [Fact]
+    public async Task Ignores_clients_it_does_not_accept()
+    {
+        var asked = 0;
+        var (server, endpoint) = await StartAsync(
+            q =>
+            {
+                Interlocked.Increment(ref asked);
+                return Task.FromResult<byte[]?>(TestDns.Answer(q, "192.0.2.7"));
+            },
+            acceptClient: _ => false);
+
+        await using (server)
+        {
+            var query = DnsMessage.BuildQuery(1, "example.com", DnsMessage.TypeA);
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => TestDns.QueryUdpAsync(endpoint, query));
+
+            using var tcp = new System.Net.Sockets.TcpClient();
+            await tcp.ConnectAsync(endpoint);
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            try
+            {
+                await DnsTcp.WriteMessageAsync(tcp.GetStream(), query, timeout.Token);
+                // The connection is dropped, which arrives as either an empty read or a reset.
+                Assert.Null(await DnsTcp.ReadMessageAsync(tcp.GetStream(), timeout.Token));
+            }
+            catch (Exception e) when (e is IOException or System.Net.Sockets.SocketException)
+            {
+            }
+            Assert.Equal(0, asked);
+        }
     }
 
     [Fact]

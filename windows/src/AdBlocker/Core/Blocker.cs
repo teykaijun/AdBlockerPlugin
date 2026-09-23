@@ -25,6 +25,9 @@ public sealed class BlockerOptions
 
     /// <summary>Port of the endpoint the browser companion extension asks; 0 turns it off.</summary>
     public int ApiPort { get; init; } = LocalApi.DefaultPort;
+
+    /// <summary>Also answer other devices on the local network; null follows config.json.</summary>
+    public bool? ListenOnLan { get; init; }
 }
 
 /// <summary>
@@ -51,6 +54,7 @@ public sealed class Blocker(AppPaths paths, BlockerOptions options, ILog log)
     private QueryLog? _queryLog;
     private int _networkChanged;
     private bool _servesIPv6;
+    private bool _servingLan;
     private DateTime _lastUpstreamWarning;
 
     /// <summary>The blocked domains currently loaded (for tests and status).</summary>
@@ -64,8 +68,13 @@ public sealed class Blocker(AppPaths paths, BlockerOptions options, ILog log)
         await using var queryLog = _queryLog = new QueryLog(paths.QueryLog, options.Echo);
         Reload(initial: true);
 
-        IPEndPoint[] endpoints = [new(IPAddress.Loopback, options.Port), new(IPAddress.IPv6Loopback, options.Port)];
-        await using var server = new DnsServer(endpoints, HandleAsync);
+        // Serving the network means binding every address, so only private clients are answered.
+        var onLan = options.ListenOnLan ?? _config.ListenOnLan;
+        _servingLan = onLan;
+        IPEndPoint[] endpoints = onLan
+            ? [new(IPAddress.Any, options.Port), new(IPAddress.IPv6Any, options.Port)]
+            : [new(IPAddress.Loopback, options.Port), new(IPAddress.IPv6Loopback, options.Port)];
+        await using var server = new DnsServer(endpoints, HandleAsync, onLan ? LocalNetwork.IsPrivate : null);
         try
         {
             server.Start();
@@ -77,6 +86,11 @@ public sealed class Blocker(AppPaths paths, BlockerOptions options, ILog log)
                 "Another DNS program, or Windows' Mobile hotspot / Internet Connection Sharing, may be using it.", e);
         }
         foreach (var (endpoint, error) in server.Failed) log.Warn($"Not listening on {endpoint}: {error.Message}");
+        if (onLan)
+        {
+            var own = string.Join(", ", LocalNetwork.OwnAddresses());
+            log.Info($"Other devices on the local network can use this PC for DNS{(own.Length > 0 ? $": {own}" : "")}.");
+        }
         _servesIPv6 = server.BoundEndpoints.Any(e => e.AddressFamily == AddressFamily.InterNetworkV6);
         log.Info($"Listening for DNS lookups on {string.Join(" and ", server.BoundEndpoints)}.");
 
@@ -152,6 +166,13 @@ public sealed class Blocker(AppPaths paths, BlockerOptions options, ILog log)
         var scam = _lists.BuildScamMatcher(config);
         var automatic = _systemDns?.OriginalServers(config.ExcludedAdapters) ?? SystemDns.CurrentServers(config.ExcludedAdapters);
         var servers = UpstreamSettings.Create(config.Upstream, automatic, _dohClient);
+
+        // The sockets are opened once, so this one only takes effect after a restart.
+        if (!initial && options.ListenOnLan is null && config.ListenOnLan != _servingLan)
+        {
+            log.Warn($"Serving the local network is now {(config.ListenOnLan ? "on" : "off")} in config.json. " +
+                     "Run \"adblocker restart\" to apply it.");
+        }
 
         _config = config;
         _matcher = matcher;

@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "AdBlocker Companion",
   "short_name": "AdBlocker",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "Closes ad tabs and undoes ad redirects that AdBlocker for Windows has blocked, and warns about scam sites.",
   "minimum_chrome_version": "116",
   "icons": {
