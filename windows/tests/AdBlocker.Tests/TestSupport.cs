@@ -178,3 +178,63 @@ internal sealed class FakeUpstream : IAsyncDisposable
         await Task.WhenAll(_loops);
     }
 }
+
+/// <summary>Serves fixed responses over plain HTTP on loopback, standing in for GitHub in tests.</summary>
+internal sealed class TinyHttpServer : IAsyncDisposable
+{
+    private readonly TcpListener _listener = new(IPAddress.Loopback, 0);
+    private readonly Func<string, byte[]?> _respond;
+    private readonly CancellationTokenSource _stopping = new();
+    private readonly Task _loop;
+
+    public TinyHttpServer(Func<string, byte[]?> respond)
+    {
+        _respond = respond;
+        _listener.Start();
+        _loop = Task.Run(ServeAsync);
+    }
+
+    public string Url => $"http://127.0.0.1:{((IPEndPoint)_listener.LocalEndpoint).Port}";
+
+    private async Task ServeAsync()
+    {
+        while (!_stopping.IsCancellationRequested)
+        {
+            TcpClient client;
+            try
+            {
+                client = await _listener.AcceptTcpClientAsync(_stopping.Token);
+            }
+            catch (Exception e) when (e is OperationCanceledException or ObjectDisposedException or SocketException)
+            {
+                return;
+            }
+            _ = Task.Run(async () =>
+            {
+                using (client)
+                {
+                    var stream = client.GetStream();
+                    var reader = new StreamReader(stream, System.Text.Encoding.ASCII, leaveOpen: true);
+                    var requestLine = await reader.ReadLineAsync() ?? "";
+                    while (!string.IsNullOrEmpty(await reader.ReadLineAsync()))
+                    {
+                    }
+                    var path = requestLine.Split(' ') is [_, var target, ..] ? target : "/";
+                    var body = _respond(path);
+                    var head = body is null
+                        ? "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                        : $"HTTP/1.1 200 OK\r\nContent-Length: {body.Length}\r\nConnection: close\r\n\r\n";
+                    await stream.WriteAsync(System.Text.Encoding.ASCII.GetBytes(head));
+                    if (body is not null) await stream.WriteAsync(body);
+                }
+            });
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _stopping.Cancel();
+        _listener.Stop();
+        await _loop;
+    }
+}

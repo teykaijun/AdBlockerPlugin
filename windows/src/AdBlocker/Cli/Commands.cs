@@ -470,9 +470,8 @@ internal static class Commands
                                 "Download the new version yourself and run \"adblocker install\".");
         }
 
-        var directory = Path.Combine(Path.GetTempPath(), "AdBlocker-update");
         var lastReported = 0;
-        var downloaded = await Updates.DownloadAsync(release, http, directory, percent =>
+        var executable = await Updates.DownloadVerifiedAsync(release, http, percent =>
         {
             if (percent < lastReported + 25 && percent != 100) return;
             lastReported = percent;
@@ -480,38 +479,28 @@ internal static class Commands
         }, CancellationToken.None);
         Terminal.Ok("Downloaded, and the checksum matches the one published with the release.");
 
-        // The new executable stops the service, copies itself over the installed copy and starts again.
+        // Straight from memory into Program Files, then the new version installs itself from there.
         Terminal.Line($"Installing {release.Version}...");
+        ServiceManager.PutInPlace(executable);
         try
         {
-            using var install = Process.Start(new ProcessStartInfo(downloaded, "install") { UseShellExecute = false })
-                                ?? throw new UserError("Could not start the downloaded version.");
+            using var install = Process.Start(new ProcessStartInfo(ServiceManager.InstalledExecutable, "install") { UseShellExecute = false })
+                                ?? throw new UserError("Could not start the new version.");
             await install.WaitForExitAsync();
             if (install.ExitCode != 0) throw new UserError($"The new version could not install itself (exit code {install.ExitCode}).");
         }
-        catch (System.ComponentModel.Win32Exception e)
+        catch (Exception e) when (e is System.ComponentModel.Win32Exception or UserError)
         {
             // AdBlocker is not code-signed, so Smart App Control or SmartScreen can refuse to run it.
+            var restored = ServiceManager.RestorePrevious();
+            if (restored) StartAndConfirm();
             throw new UserError(
-                $"Windows would not run the downloaded file: {e.Message}\n" +
-                $"It is kept at {downloaded}. You can run it yourself with \"install\", or download the new version from\n" +
-                $"{release.PageUrl} and run \"adblocker install\" as administrator.");
+                $"The new version did not start: {e.Message}\n" +
+                (restored ? $"AdBlocker {AppInfo.Version} is back in place and blocking.\n" : "") +
+                $"You can download {release.Version} from {release.PageUrl} and run \"adblocker install\" as administrator.");
         }
-        TryDelete(directory);
         Terminal.Ok($"AdBlocker {release.Version} is installed and blocking.");
         return 0;
-    }
-
-    private static void TryDelete(string directory)
-    {
-        try
-        {
-            Directory.Delete(directory, recursive: true);
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            Terminal.Dim($"You can delete {directory} when you like.");
-        }
     }
 
     // ----------------------------------------------------------------------------------------------

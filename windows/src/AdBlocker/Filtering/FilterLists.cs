@@ -12,6 +12,17 @@ public sealed class BuiltInListInfo
     public bool EnabledByDefault { get; set; }
 }
 
+/// <summary>An entry of filters/community-lists.json, the presets both apps offer.</summary>
+public sealed class CommunityListInfo
+{
+    public string Id { get; set; } = "";
+    public string Title { get; set; } = "";
+    public string Url { get; set; } = "";
+    public string Description { get; set; } = "";
+    public bool EnabledByDefault { get; set; }
+    public bool Scam { get; set; }
+}
+
 /// <param name="Scam">
 /// A list of scam and fraud sites. Domains from these are worth warning about, because a
 /// blocked shop or "free trial" looks like a broken website rather than a lucky escape.
@@ -37,26 +48,8 @@ public sealed class FilterLists(AppPaths paths)
     public static readonly TimeSpan MaxAge = TimeSpan.FromDays(7);
     private const long MaxDownloadBytes = 50 * 1024 * 1024;
 
-    /// <summary>The same presets as the Android app.</summary>
-    public static readonly IReadOnlyList<CommunityList> Presets =
-    [
-        new("hagezi-normal", "HaGeZi Multi Normal", "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/multi.txt",
-            "Recommended. About 180,000 ad, tracker and telemetry domains.", Enabled: true, Custom: false),
-        new("hagezi-popupads", "HaGeZi Pop-Up Ads", "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/popupads.txt",
-            "Recommended. Blocks the scripts that open pop-up ads and redirect pages. About 50,000 domains.", Enabled: true, Custom: false),
-        new("hagezi-fake", "HaGeZi Fake shops and scams", "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/fake.txt",
-            "Recommended. Fake shops, subscription traps, rip-offs and fake streaming sites. About 17,000 domains.",
-            Enabled: true, Custom: false, Scam: true),
-        new("hagezi-tif-mini", "HaGeZi Threat Intelligence (mini)", "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/tif.mini.txt",
-            "Adds phishing, malware and fraud domains. About 180,000 domains, so it uses more memory.",
-            Enabled: false, Custom: false, Scam: true),
-        new("hagezi-light", "HaGeZi Multi Light", "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/light.txt",
-            "A smaller list with very few false positives.", Enabled: false, Custom: false),
-        new("adguard-dns", "AdGuard DNS filter", "https://adguardteam.github.io/HostlistsRegistry/assets/filter_1.txt",
-            "Combines EasyList, EasyPrivacy and AdGuard's mobile ads filter.", Enabled: false, Custom: false),
-        new("stevenblack", "StevenBlack Unified hosts", "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts",
-            "Popular hosts file covering ads and malware.", Enabled: false, Custom: false),
-    ];
+    /// <summary>The community list presets, from filters/community-lists.json (shared with the Android app).</summary>
+    public static IReadOnlyList<CommunityList> Presets { get; } = LoadPresets();
 
     public static IReadOnlyList<BuiltInListInfo> BuiltIn { get; } = LoadBuiltInIndex();
 
@@ -290,6 +283,16 @@ public sealed class FilterLists(AppPaths paths)
         var stream = typeof(FilterLists).Assembly.GetManifestResourceStream($"filters/{id}.txt")
             ?? throw new InvalidOperationException($"Built-in list {id} is missing from the executable.");
         return new StreamReader(stream);
+    }
+
+    private static List<CommunityList> LoadPresets()
+    {
+        using var stream = typeof(FilterLists).Assembly.GetManifestResourceStream("filters/community-lists.json")
+            ?? throw new InvalidOperationException("filters/community-lists.json is missing from the executable.");
+        var entries = JsonSerializer.Deserialize(stream, AppJson.Default.ListCommunityListInfo) ?? [];
+        return entries
+            .Select(e => new CommunityList(e.Id, e.Title, e.Url, e.Description, e.EnabledByDefault, Custom: false, e.Scam))
+            .ToList();
     }
 
     private static List<BuiltInListInfo> LoadBuiltInIndex()

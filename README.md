@@ -351,9 +351,11 @@ which asks you to confirm. The Home screen shows a card when a new version is ou
 Android asks you to allow AdBlocker to install apps; the app links straight to that switch.
 
 **Windows.** `adblocker upgrade` (as administrator) does the same from the terminal: it downloads
-the new `adblocker.exe`, checks the checksum, and lets it replace the installed service. The service
-checks once a day in the background, so `adblocker status` tells you when something is out, and
-`adblocker upgrade --check` just reports without installing.
+the new `adblocker.exe` into memory, checks the checksum there, and writes exactly those bytes into
+`C:\Program Files\AdBlocker`, so nothing can swap the file in between. If the new version doesn't
+start, the previous one is put back. The service checks once a day in the background, so
+`adblocker status` tells you when something is out, and `adblocker upgrade --check` just reports
+without installing.
 
 **Browser companion.** An unpacked extension can't update itself. Its window tells you when
 AdBlocker for Windows is newer than the extension: unzip the new `AdBlocker-Companion.zip` over the
@@ -361,9 +363,12 @@ folder and press **Reload** on the extensions page.
 
 A few honest caveats:
 
-- `adblocker.exe` isn't code-signed, so Windows may block the downloaded file (SmartScreen, or Smart
-  App Control on newer machines). If that happens, `upgrade` tells you where the file is so you can
-  run it yourself.
+- `adblocker.exe` isn't code-signed, so Windows may refuse to run the new version (SmartScreen, or
+  Smart App Control on newer machines). If that happens, `upgrade` puts the previous version back
+  and links to the release so you can install it by hand.
+- Versions 1.4.0 and 1.5.0 downloaded updates to the temporary folder first, which another program
+  running as you could have swapped in the moment before it ran as administrator. If you're on one of
+  those, please install 1.5.1 or later by hand once rather than with `upgrade`.
 - The check asks GitHub for the latest release and nothing else. Turn it off with the
   **Check for updates automatically** switch on Android, or `"checkForUpdates": false` in
   `config.json` on Windows.
@@ -373,7 +378,8 @@ A few honest caveats:
 ## Filter lists
 
 [`filters/`](filters) holds the built-in lists, one `||domain^` rule per line (`@@||domain^` for
-exceptions), plus `lists.json` with their names and defaults. Both apps include them as they are:
+exceptions), plus `lists.json` with their names and defaults, and `community-lists.json` with the
+downloadable lists below. Both apps include these files as they are:
 
 | List | Default | Contents |
 | --- | --- | --- |
@@ -412,7 +418,7 @@ Bug reports, ideas and pull requests help just as much. Thank you!
 ## Project layout
 
 ```
-filters/                         Built-in blocklists shared by both apps
+filters/                         Built-in blocklists and list presets shared by both apps
 windows/                         Windows app (.NET 10)
   src/AdBlocker/
     Cli/                         Commands and console output

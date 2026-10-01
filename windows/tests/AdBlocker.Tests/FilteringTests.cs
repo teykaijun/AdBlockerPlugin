@@ -62,6 +62,23 @@ public class FilterListsTests : IDisposable
     }
 
     [Fact]
+    public void Reads_the_presets_shared_with_the_Android_app()
+    {
+        Assert.Equal(
+            ["hagezi-normal", "hagezi-popupads", "hagezi-fake", "hagezi-tif-mini", "hagezi-light", "adguard-dns", "stevenblack"],
+            FilterLists.Presets.Select(l => l.Id));
+        Assert.Equal(["hagezi-normal", "hagezi-popupads", "hagezi-fake"], FilterLists.Presets.Where(l => l.Enabled).Select(l => l.Id));
+        Assert.Equal(["hagezi-fake", "hagezi-tif-mini"], FilterLists.Presets.Where(l => l.Scam).Select(l => l.Id));
+        Assert.All(FilterLists.Presets, l =>
+        {
+            Assert.True(FilterLists.IsValidId(l.Id), l.Id);
+            Assert.StartsWith("https://", l.Url);
+            Assert.False(string.IsNullOrWhiteSpace(l.Title) || string.IsNullOrWhiteSpace(l.Description), l.Id);
+            Assert.False(l.Custom);
+        });
+    }
+
+    [Fact]
     public void Uses_list_defaults_until_the_user_changes_them()
     {
         var config = new AppConfig();

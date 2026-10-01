@@ -1,0 +1,58 @@
+[
+  {
+    "id": "hagezi-normal",
+    "title": "HaGeZi Multi Normal",
+    "url": "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/multi.txt",
+    "description": "Recommended. About 180,000 ad, tracker and telemetry domains used by apps, games and websites.",
+    "enabledByDefault": true,
+    "scam": false
+  },
+  {
+    "id": "hagezi-popupads",
+    "title": "HaGeZi Pop-Up Ads",
+    "url": "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/popupads.txt",
+    "description": "Recommended. Blocks the scripts that open pop-up ads and redirect pages. About 50,000 domains.",
+    "enabledByDefault": true,
+    "scam": false
+  },
+  {
+    "id": "hagezi-fake",
+    "title": "HaGeZi Fake shops and scams",
+    "url": "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/fake.txt",
+    "description": "Recommended. Fake shops, subscription traps, rip-offs and fake streaming sites. About 17,000 domains. AdBlocker warns you when one of these is blocked.",
+    "enabledByDefault": true,
+    "scam": true
+  },
+  {
+    "id": "hagezi-tif-mini",
+    "title": "HaGeZi Threat Intelligence (mini)",
+    "url": "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/tif.mini.txt",
+    "description": "Adds phishing, malware and fraud domains. About 180,000 domains, so it uses more memory.",
+    "enabledByDefault": false,
+    "scam": true
+  },
+  {
+    "id": "hagezi-light",
+    "title": "HaGeZi Multi Light",
+    "url": "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/light.txt",
+    "description": "A smaller list with very few false positives, for older phones and PCs.",
+    "enabledByDefault": false,
+    "scam": false
+  },
+  {
+    "id": "adguard-dns",
+    "title": "AdGuard DNS filter",
+    "url": "https://adguardteam.github.io/HostlistsRegistry/assets/filter_1.txt",
+    "description": "Combines EasyList, EasyPrivacy and AdGuard's mobile ads filter.",
+    "enabledByDefault": false,
+    "scam": false
+  },
+  {
+    "id": "stevenblack",
+    "title": "StevenBlack Unified hosts",
+    "url": "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts",
+    "description": "Popular hosts file covering ads and malware.",
+    "enabledByDefault": false,
+    "scam": false
+  }
+]

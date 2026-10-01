@@ -91,8 +91,9 @@ public static class ServiceManager
         {
             if (Status() is not null) Stop();
             Directory.CreateDirectory(InstallDirectory);
-            ReplaceInstalledExecutable(current);
+            RetryWhileInUse(() => File.Copy(current, InstalledExecutable, overwrite: true));
         }
+        DeleteLeftovers();
 
         var binaryPath = $"\"{InstalledExecutable}\" service";
         if (Status() is null)
@@ -109,14 +110,70 @@ public static class ServiceManager
         return InstalledExecutable;
     }
 
+    private static string PreviousExecutable => InstalledExecutable + ".old";
+    private static string StagedExecutable => InstalledExecutable + ".new";
+
+    /// <summary>
+    /// Puts an already verified new version in place of the installed one, for "upgrade". The
+    /// bytes go straight from memory into Program Files, which only administrators can change,
+    /// so nothing can swap the file between the checksum check and the start.
+    /// </summary>
+    public static void PutInPlace(byte[] executable)
+    {
+        if (Status() is not null) Stop();
+        Directory.CreateDirectory(InstallDirectory);
+        File.WriteAllBytes(StagedExecutable, executable);
+        TryDelete(PreviousExecutable);
+        // The installed copy may be the very program running this upgrade. Windows lets a
+        // running program be renamed, just not overwritten.
+        if (File.Exists(InstalledExecutable))
+        {
+            RetryWhileInUse(() => File.Move(InstalledExecutable, PreviousExecutable, overwrite: true));
+        }
+        File.Move(StagedExecutable, InstalledExecutable, overwrite: true);
+    }
+
+    /// <summary>Goes back to the version <see cref="PutInPlace"/> replaced, if the new one did not start.</summary>
+    public static bool RestorePrevious()
+    {
+        if (!File.Exists(PreviousExecutable)) return false;
+        RetryWhileInUse(() => File.Move(PreviousExecutable, InstalledExecutable, overwrite: true));
+        return true;
+    }
+
+    /// <summary>
+    /// Removes the files an upgrade leaves behind. The previous version may still be running
+    /// (it is the program that started the upgrade), so failing that, Windows removes it at
+    /// the next restart.
+    /// </summary>
+    public static void DeleteLeftovers()
+    {
+        TryDelete(StagedExecutable);
+        if (!File.Exists(PreviousExecutable) || TryDelete(PreviousExecutable)) return;
+        NativeMethods.MoveFileEx(PreviousExecutable, null, NativeMethods.MovefileDelayUntilReboot);
+    }
+
+    private static bool TryDelete(string path)
+    {
+        try
+        {
+            File.Delete(path);
+            return true;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
     /// <summary>A service that just stopped can keep its file open for a moment while its process exits.</summary>
-    private static void ReplaceInstalledExecutable(string source)
+    private static void RetryWhileInUse(Action change)
     {
         for (var attempt = 1; ; attempt++)
         {
             try
             {
-                File.Copy(source, InstalledExecutable, overwrite: true);
+                change();
                 return;
             }
             catch (IOException) when (attempt < 40)
@@ -125,7 +182,7 @@ public static class ServiceManager
             }
             catch (IOException e)
             {
-                throw new UserError($"Could not replace {InstalledExecutable} because it is still in use. Please wait a moment and run \"adblocker install\" again.", e);
+                throw new UserError($"Could not replace {InstalledExecutable} because it is still in use. Please wait a moment and try again.", e);
             }
         }
     }

@@ -18,7 +18,7 @@
 
   <!-- The built-in blocklists are shared with the Android app. -->
   <ItemGroup>
-    <EmbeddedResource Include="..\..\..\filters\*.txt;..\..\..\filters\lists.json"
+    <EmbeddedResource Include="..\..\..\filters\*.txt;..\..\..\filters\lists.json;..\..\..\filters\community-lists.json"
                       LogicalName="filters/%(Filename)%(Extension)"
                       Link="filters\%(Filename)%(Extension)" />
   </ItemGroup>

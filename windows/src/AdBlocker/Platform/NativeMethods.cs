@@ -40,4 +40,11 @@ internal static class NativeMethods
 
     [DllImport("kernel32.dll", ExactSpelling = true)]
     public static extern uint GetConsoleProcessList([Out] uint[] processList, uint processCount);
+
+    public const uint MovefileDelayUntilReboot = 0x4;
+
+    /// <summary>With a null destination and <see cref="MovefileDelayUntilReboot"/>, deletes the file at the next restart.</summary>
+    [DllImport("kernel32.dll", EntryPoint = "MoveFileExW", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool MoveFileEx(string existingFileName, string? newFileName, uint flags);
 }

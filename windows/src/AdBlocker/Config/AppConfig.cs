@@ -109,6 +109,7 @@ public static class ConfigStore
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(AppConfig))]
 [JsonSerializable(typeof(List<BuiltInListInfo>))]
+[JsonSerializable(typeof(List<CommunityListInfo>))]
 [JsonSerializable(typeof(Dictionary<string, ListStatus>))]
 [JsonSerializable(typeof(StatsSnapshot))]
 [JsonSerializable(typeof(UpdateState))]

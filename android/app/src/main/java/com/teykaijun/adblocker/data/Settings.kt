@@ -32,56 +32,24 @@ data class RemoteList(
     val scam: Boolean = false,
 ) {
     companion object {
-        val PRESETS = listOf(
-            RemoteList(
-                id = "hagezi-normal",
-                title = "HaGeZi Multi Normal",
-                url = "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/multi.txt",
-                description = "Recommended. About 180,000 ad, tracker and telemetry domains used by apps, games and websites.",
-            ),
-            RemoteList(
-                id = "hagezi-popupads",
-                title = "HaGeZi Pop-Up Ads",
-                url = "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/popupads.txt",
-                description = "Recommended. Blocks the scripts that open pop-up ads and redirect pages. About 50,000 domains.",
-            ),
-            RemoteList(
-                id = "hagezi-fake",
-                title = "HaGeZi Fake shops and scams",
-                url = "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/fake.txt",
-                description = "Recommended. Fake shops, subscription traps, rip-offs and fake streaming sites. " +
-                    "About 17,000 domains. AdBlocker warns you when one of these is blocked.",
-                scam = true,
-            ),
-            RemoteList(
-                id = "hagezi-tif-mini",
-                title = "HaGeZi Threat Intelligence (mini)",
-                url = "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/tif.mini.txt",
-                description = "Adds phishing, malware and fraud domains. About 180,000 domains, so it uses more memory.",
-                scam = true,
-            ),
-            RemoteList(
-                id = "hagezi-light",
-                title = "HaGeZi Multi Light",
-                url = "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/light.txt",
-                description = "A smaller list for older phones. Very few false positives.",
-            ),
-            RemoteList(
-                id = "adguard-dns",
-                title = "AdGuard DNS filter",
-                url = "https://adguardteam.github.io/HostlistsRegistry/assets/filter_1.txt",
-                description = "Combines EasyList, EasyPrivacy and AdGuard's mobile ads filter.",
-            ),
-            RemoteList(
-                id = "stevenblack",
-                title = "StevenBlack Unified hosts",
-                url = "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts",
-                description = "Popular hosts file covering ads and malware.",
-            ),
-        )
+        /** The asset that holds the presets; the Windows app reads the same file from filters/. */
+        const val PRESETS_ASSET = "community-lists.json"
 
-        /** Community lists that are on until the user turns them off. */
-        val DEFAULT_ENABLED = setOf("hagezi-normal", "hagezi-popupads", "hagezi-fake")
+        /** Reads filters/community-lists.json. A preset's `enabled` is its default. */
+        fun parsePresets(json: String): List<RemoteList> {
+            val array = JSONArray(json)
+            return (0 until array.length()).map { i ->
+                val o = array.getJSONObject(i)
+                RemoteList(
+                    id = o.getString("id"),
+                    title = o.getString("title"),
+                    url = o.getString("url"),
+                    description = o.getString("description"),
+                    enabled = o.optBoolean("enabledByDefault"),
+                    scam = o.optBoolean("scam"),
+                )
+            }
+        }
     }
 }
 
@@ -90,7 +58,8 @@ data class Settings(
     val protectionOn: Boolean = false,
     /** Built-in list toggles the user changed; missing ids use the list default. */
     val builtInLists: Map<String, Boolean> = emptyMap(),
-    val remoteLists: List<RemoteList> = RemoteList.PRESETS.map { it.copy(enabled = it.id in RemoteList.DEFAULT_ENABLED) },
+    /** Presets and lists added by URL; [SettingsStore] fills this in. */
+    val remoteLists: List<RemoteList> = emptyList(),
     val blockedDomains: Set<String> = emptySet(),
     val allowedDomains: Set<String> = emptySet(),
     /** Packages that bypass the VPN entirely. */
@@ -115,6 +84,7 @@ data class Settings(
 /** Settings persisted in SharedPreferences and exposed as a [StateFlow]. */
 class SettingsStore(context: Context) {
     private val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
+    private val presets = context.assets.open(RemoteList.PRESETS_ASSET).bufferedReader().use { RemoteList.parsePresets(it.readText()) }
     private val state = MutableStateFlow(read())
 
     val settings: StateFlow<Settings> = state.asStateFlow()
@@ -131,9 +101,9 @@ class SettingsStore(context: Context) {
 
     private fun read(): Settings {
         migrate()
-        val enabledRemote = prefs.getStringSet(KEY_REMOTE_ENABLED, null) ?: RemoteList.DEFAULT_ENABLED
+        val enabledRemote = prefs.getStringSet(KEY_REMOTE_ENABLED, null) ?: presets.filter { it.enabled }.map { it.id }.toSet()
         val custom = parseCustomLists(prefs.getString(KEY_CUSTOM_LISTS, null))
-        val remote = (RemoteList.PRESETS + custom).map { it.copy(enabled = it.id in enabledRemote) }
+        val remote = (presets + custom).map { it.copy(enabled = it.id in enabledRemote) }
         val builtIn = prefs.getStringSet(KEY_BUILTIN, emptySet()).orEmpty().mapNotNull { entry ->
             entry.split('=', limit = 2).takeIf { it.size == 2 }?.let { (id, on) -> id to on.toBoolean() }
         }.toMap()

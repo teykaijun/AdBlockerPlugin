@@ -62,6 +62,34 @@ public class UpdatesTests
     }
 
     [Fact]
+    public async Task Downloads_into_memory_and_checks_the_checksum()
+    {
+        var exe = System.Security.Cryptography.RandomNumberGenerator.GetBytes(300_000);
+        var hash = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(exe));
+        await using var server = new TinyHttpServer(path => path switch
+        {
+            "/SHA256SUMS.txt" => System.Text.Encoding.ASCII.GetBytes($"{hash}  adblocker.exe\n"),
+            "/other-sums.txt" => System.Text.Encoding.ASCII.GetBytes($"{hash}  something-else.exe\n"),
+            "/adblocker.exe" => exe,
+            "/tampered.exe" => [.. exe.Take(1_000)],
+            _ => null,
+        });
+        using var http = new HttpClient();
+        var release = new Release("9.9.9", $"{server.Url}/adblocker.exe", exe.Length, $"{server.Url}/SHA256SUMS.txt", "page");
+
+        var progress = new List<int>();
+        Assert.Equal(exe, await Updates.DownloadVerifiedAsync(release, http, progress.Add, CancellationToken.None));
+        Assert.Equal(100, progress[^1]);
+
+        await Assert.ThrowsAsync<UserError>(() =>
+            Updates.DownloadVerifiedAsync(release with { ExeUrl = $"{server.Url}/tampered.exe" }, http, null, CancellationToken.None));
+        await Assert.ThrowsAsync<UserError>(() =>
+            Updates.DownloadVerifiedAsync(release with { SumsUrl = $"{server.Url}/other-sums.txt" }, http, null, CancellationToken.None));
+        await Assert.ThrowsAsync<UserError>(() =>
+            Updates.DownloadVerifiedAsync(release with { SumsUrl = null }, http, null, CancellationToken.None));
+    }
+
+    [Fact]
     public void Remembers_what_a_check_found()
     {
         var root = Path.Combine(Path.GetTempPath(), $"adblocker-updates-{Guid.NewGuid():N}");

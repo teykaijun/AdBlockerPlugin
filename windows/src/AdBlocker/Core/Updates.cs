@@ -88,11 +88,14 @@ public static class Updates
         return release is not null && IsNewer(release.Version, currentVersion) ? release : null;
     }
 
-    /// <summary>Downloads the release's executable into <paramref name="directory"/> and checks its SHA-256.</summary>
-    public static async Task<string> DownloadAsync(
+    /// <summary>
+    /// Downloads the release's executable into memory and checks its SHA-256 there. The caller
+    /// writes exactly these bytes into Program Files: a file in %TEMP% could be swapped by any
+    /// program of the same user between the check and the start, which runs as administrator.
+    /// </summary>
+    public static async Task<byte[]> DownloadVerifiedAsync(
         Release release,
         HttpClient http,
-        string directory,
         Action<int>? progress,
         CancellationToken cancellationToken)
     {
@@ -100,43 +103,32 @@ public static class Updates
         var expected = ExpectedHash(await http.GetStringAsync(release.SumsUrl, cancellationToken), ExeName)
             ?? throw new UserError($"The release's {SumsName} does not list {ExeName}.");
 
-        Directory.CreateDirectory(directory);
-        var file = Path.Combine(directory, $"adblocker-{release.Version}.exe");
-        using (var response = await http.GetAsync(release.ExeUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken))
+        using var response = await http.GetAsync(release.ExeUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        var total = release.ExeSize > 0 ? release.ExeSize : response.Content.Headers.ContentLength ?? 0;
+        await using var input = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var output = new MemoryStream(total is > 0 and < MaxBytes ? (int)total : 0);
+        var buffer = new byte[81_920];
+        var reported = -1;
+        int read;
+        while ((read = await input.ReadAsync(buffer, cancellationToken)) > 0)
         {
-            response.EnsureSuccessStatusCode();
-            var total = release.ExeSize > 0 ? release.ExeSize : response.Content.Headers.ContentLength ?? 0;
-            await using var input = await response.Content.ReadAsStreamAsync(cancellationToken);
-            await using var output = File.Create(file);
-            var buffer = new byte[81_920];
-            long written = 0;
-            var reported = -1;
-            int read;
-            while ((read = await input.ReadAsync(buffer, cancellationToken)) > 0)
+            if (output.Length + read > MaxBytes) throw new UserError("The download is unexpectedly large.");
+            output.Write(buffer, 0, read);
+            var percent = total > 0 ? (int)Math.Clamp(output.Length * 100 / total, 0, 100) : 0;
+            if (percent != reported)
             {
-                written += read;
-                if (written > MaxBytes) throw new UserError("The download is unexpectedly large.");
-                await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
-                var percent = total > 0 ? (int)Math.Clamp(written * 100 / total, 0, 100) : 0;
-                if (percent != reported)
-                {
-                    reported = percent;
-                    progress?.Invoke(percent);
-                }
+                reported = percent;
+                progress?.Invoke(percent);
             }
         }
 
-        string actual;
-        await using (var written = File.OpenRead(file))
+        var bytes = output.ToArray();
+        if (!Convert.ToHexStringLower(SHA256.HashData(bytes)).Equals(expected, StringComparison.OrdinalIgnoreCase))
         {
-            actual = Convert.ToHexStringLower(await SHA256.HashDataAsync(written, cancellationToken));
-        }
-        if (!actual.Equals(expected, StringComparison.OrdinalIgnoreCase))
-        {
-            File.Delete(file);
             throw new UserError("The download does not match the checksum published with the release.");
         }
-        return file;
+        return bytes;
     }
 
     /// <summary>Records what a check found, so "adblocker status" can mention it without going online.</summary>
