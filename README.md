@@ -430,8 +430,8 @@ downloadable lists below. Both apps include these files as they are:
 
 Community lists are downloaded when turned on and again once they're a week old. Windows looks every
 6 hours; Android looks every hour while protection is on and whenever the phone gets online, so a
-download that failed because the network wasn't ready is tried again (at most once an hour by
-itself; **Update now** tries at once):
+download that failed because the network wasn't ready is tried again once it is. Other failed
+downloads are tried again an hour later (**Update now** tries at once):
 
 | ID | List | Default |
 | --- | --- | --- |
