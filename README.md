@@ -70,10 +70,11 @@ website that happens to be down.
   anyway** button in case it's a false alarm. It appears at most once an hour per site. The
   **Activity** screen marks these lookups as *Suspected scam*.
 - **Windows:** the [browser companion](#browser-companion) shows a desktop notification naming the
-  site, and its window counts them. In a terminal, `adblocker log` marks those lookups **SCAM**, and
-  `adblocker check <domain>` names the list.
+  site, at most once an hour per site, also when the page can't be left (for example a link opened
+  from another app). Its window counts them. In a terminal, `adblocker log` marks those lookups
+  **SCAM**, and `adblocker check <domain>` names the list.
 - If you trust a site, allow it: tap **Allow anyway**, use the Activity screen on Android, or run
-  `adblocker allow <domain>` on Windows.
+  `adblocker allow <domain>` on Windows (add `--for 10m` to allow it only for a while).
 
 You can add HaGeZi's **Threat Intelligence (mini)** list in the Filters screen (or with
 `adblocker lists enable hagezi-tif-mini`) for phishing, malware and fraud domains too. It's off by
@@ -96,7 +97,8 @@ Works on Windows 10 (version 2004 or later) and Windows 11. You don't need to in
    .\adblocker.exe install
    ```
    This copies the program to `C:\Program Files\AdBlocker`, sets up the **AdBlocker** Windows service
-   (it starts with Windows and restarts itself if it crashes) and starts blocking.
+   and starts blocking. The service starts with Windows, and if it crashes or stops because of an
+   error, Windows restarts it (after 2 seconds, then 10, then once a minute).
 3. To see whether it's working:
    ```powershell
    & "C:\Program Files\AdBlocker\adblocker.exe" status
@@ -133,13 +135,15 @@ It isn't on the Chrome Web Store, so it's installed as an unpacked extension:
 Its toolbar button shows how many ad tabs it has closed and redirects it has undone since the
 browser started. A few things worth knowing:
 
-- If you type a blocked address into a tab you've already used, it takes you back to the previous
-  page. In a new tab you'll see the browser's error page instead, and `adblocker check <domain>`
-  tells you which list blocks it.
+- If you type a blocked address yourself, it's treated like a redirect: the tab goes back to the page
+  before, if there is one. `adblocker check <domain>` tells you which list blocks it.
 - If a link opens a tab that closes straight away, the link went through a blocked address (often a
   click tracker). The **Recently** list in the extension's window shows which one, and
   `adblocker allow <domain>` lets it through.
 - If a page keeps redirecting, it gives up after three tries and leaves the error page.
+- Changes you make with `adblocker allow`, `allow --for` or `pause` reach the companion within a few
+  seconds. While AdBlocker is paused, the extension's window says until when, and it leaves tabs
+  alone.
 - Firefox isn't supported. Its own pop-up blocker, or uBlock Origin, helps there.
 
 ### Commands
@@ -149,11 +153,13 @@ Commands marked * need a terminal opened with **Run as administrator**.
 | Command | What it does |
 | --- | --- |
 | `install` * / `uninstall [--purge]` * | Install and start the service / stop it, restore network settings and remove it (`--purge` also deletes settings and logs) |
-| `start` * / `stop` * / `restart` * | Control the service. While it's stopped nothing is blocked and network settings are back to normal. |
+| `start` * / `stop` * / `restart` * | Control the service. Starting waits until AdBlocker is really blocking (up to 30 seconds) and says so. While it's stopped nothing is blocked and network settings are back to normal. |
 | `run [--verbose]` * | Block ads in this console window until Ctrl+C, showing what gets blocked |
-| `status` | Whether blocking is on, today's numbers, lists and network adapters |
-| `check <domain>` | Whether a domain is blocked, and by which list |
-| `block <domain>` * / `allow <domain>` * / `forget <domain>` * | Always block / never block a domain (and its subdomains) / remove your rule |
+| `status` | Whether blocking is on (or paused, and until when), today's numbers, lists, network adapters, and domains you allowed for a while |
+| `check <domain>` | Whether a domain is blocked right now, and why: your own rule (also one for a parent domain), an allowance for a while, a pause, a list exception, or the lists that block it. It also says what happens once a pause or allowance ends. |
+| `block <domain>` * / `allow <domain>` * / `forget <domain>` * | Always block / never block a domain (and its subdomains) / remove your rules for it |
+| `allow <domain> --for 10m` * | Let a domain (and its subdomains) through for a while: minutes (`10m`) or hours (`2h`), up to a day. A later `block` or `allow` for that domain replaces it. |
+| `pause [10m]` * / `resume` * | Let everything through for a while (10 minutes if you don't say), also for devices that use this PC through `lan on` / block again straight away |
 | `log [-n 30] [-f]` | Recently blocked domains, with known scam sites marked `SCAM`; `-f` keeps following |
 | `lists` | All lists and whether they're on |
 | `lists enable <id>` * / `lists disable <id>` * | Turn a built-in or community list on or off |
@@ -162,24 +168,30 @@ Commands marked * need a terminal opened with **Run as administrator**.
 | `lan [on\|off]` * | Also answer phones and other devices on your network, so an [iPhone can use this PC](#iphone-ipad-and-other-devices) as its DNS server |
 | `dns [server...]` * | Show or choose where allowed lookups go: `auto` (your network's DNS, the default), `cloudflare`, `quad9`, `google` (these three use encrypted DNS over HTTPS), an IP address, or an `https://` DNS-over-HTTPS URL |
 | `upgrade [--check]` * | Download the latest version from GitHub, check it against the published checksum, and install it (`--check` only reports whether one is available) |
-| `doctor` | Look for settings that might let ads slip past, and check that the browser companion can reach AdBlocker |
+| `doctor` | Look for things that might let ads slip past (a browser's own secure DNS, other DNS servers an adapter still uses, a pause that's still on), and check that the browser companion can reach AdBlocker |
 | `restore` * | Put the original network settings back if AdBlocker was killed and can't restart |
 | `stats reset` * | Set the counters back to zero |
 | `support` | Support development ☕ (opens my Buy Me a Coffee page) |
 
-Changes made with these commands reach the running service within a few seconds.
+Changes made with these commands reach the running service within a few seconds, and AdBlocker then
+clears Windows' DNS cache so they apply straight away. It does the same when a pause or an
+`allow --for` runs out. Browsers keep their own short cache, so a page may need a minute or a reload.
 
 ### Settings and files
 
-Everything is kept in `C:\ProgramData\AdBlocker`, which only administrators and the service can change:
+Everything is kept in `C:\ProgramData\AdBlocker`, which only administrators and the service can change.
+If that folder was created by someone else, or is a link to another folder, AdBlocker won't use it
+and asks you to delete it as administrator first, because another program could have put settings
+there.
 
 | File | Contents |
 | --- | --- |
-| `config.json` | Lists, your rules, DNS servers, `excludedAdapters`, `logAllowedQueries`, `listenOnLan`, `checkForUpdates`. You can edit it by hand; the service reloads it automatically. |
+| `config.json` | Lists, your rules (including allowances for a while and a pause), DNS servers, `excludedAdapters`, `logAllowedQueries`, `listenOnLan`, `checkForUpdates`. You can edit it by hand; the service reloads it automatically. If an edit has a mistake, the service log says so and the previous settings stay in force. |
 | `lists\` | Downloaded community lists |
 | `logs\queries.log` | Blocked lookups, marked `BLOCKED` or `SCAM` (and allowed ones if `logAllowedQueries` is `true`), rotated at 10 MB |
 | `logs\service.log` | What the service did, and any errors |
 | `dns-backup.json` | Your network settings from before AdBlocker, used to restore them |
+| `blocker.lock` | Held by the service or `adblocker run` while it manages the network settings, so two copies can't do it at once |
 | `update.json` | What the daily update check found, so `status` can mention it without going online |
 
 ### If ads still get through on Windows
@@ -192,11 +204,16 @@ Everything is kept in `C:\ProgramData\AdBlocker`, which only administrators and 
   service provider.
 - **Firefox with DNS over HTTPS turned on by hand.** Firefox's default setting works with AdBlocker;
   a manually chosen provider doesn't.
+- **Other DNS servers on an adapter.** If an adapter still asks other DNS servers as well (often IPv6
+  ones handed out by the router), lookups can go around AdBlocker. `doctor` names them; restarting
+  AdBlocker may fix it.
 - **VPN apps.** Adapters from Tailscale, WireGuard, OpenVPN and similar software are left alone so
   names on the VPN keep working. If a VPN sends all DNS through itself, ads won't be blocked while it's
   connected. You can remove it from `excludedAdapters` in `config.json` if you prefer.
 - **Port 53 in use.** Windows Mobile hotspot / Internet Connection Sharing, or another DNS program,
-  can stop AdBlocker from starting.
+  can stop AdBlocker from starting. It then puts the network settings back and says why.
+- **A pause.** `adblocker pause` lets everything through until it runs out; `status` and `doctor`
+  mention it, and `adblocker resume` ends it.
 
 ### How the Windows app works
 
@@ -205,12 +222,20 @@ Everything is kept in `C:\ProgramData\AdBlocker`, which only administrators and 
 - Every connected network adapter (except VPN adapters) is pointed at it through the
   `SetInterfaceDnsSettings` API. All adapters are changed because Windows asks every adapter's DNS
   servers at once and takes the first answer. The original settings are saved to `dns-backup.json`
-  first and restored when the service stops, the console closes, Windows shuts down, or after a crash
-  when the service restarts.
+  first and restored when the service stops, the console closes, Windows shuts down, AdBlocker fails
+  to start, or after a crash when the service restarts. Only one copy (the service or `adblocker run`)
+  changes them at a time.
 - With `auto`, allowed lookups go to the DNS servers your network provides (so local names and
-  captive portals keep working), with public resolvers as a fallback.
+  captive portals keep working). Public resolvers are used when the network provides none, or, with
+  `lan on`, only this PC itself, since AdBlocker never sends lookups to itself.
+- When a DNS server doesn't answer, AdBlocker asks the next one and starts there from then on. When a
+  server answers that it can't or won't look up a name, the next one is asked for that name only, so
+  your router can still answer local names such as `printer.lan`.
 - New networks (another Wi-Fi, USB tethering) are picked up automatically.
-- Lookups for `use-application-dns.net` are blocked, which asks Firefox to stay on the system DNS.
+- Lookups for `use-application-dns.net` (Firefox) and `mask.icloud.com` / `mask-h2.icloud.com`
+  (iCloud Private Relay) get "no such domain", even while blocking is paused. That's the standard way
+  for a network to ask Firefox to stay on the system DNS, and Apple devices to leave Private Relay
+  off, so neither goes around AdBlocker. `adblocker allow <domain>` opts out.
 - A tiny HTTP endpoint on `127.0.0.1:45353` answers the browser companion's "is this address
   blocked?" questions (`GET /v1/check?host=…`). It only answers requests addressed to `127.0.0.1` or
   `localhost`, turns away requests from web pages, and can't change anything.
@@ -234,9 +259,9 @@ installed from an APK file:
 
 A few tips that help:
 
-- Turn on **Always-on VPN** for AdBlocker (there's a shortcut on the Home screen), but please leave
-  **Block connections without VPN** off. AdBlocker only routes DNS, so that option would cut off
-  everything else.
+- Turn on **Always-on VPN** for AdBlocker (the Home screen has a shortcut until it's set up), but
+  please leave **Block connections without VPN** off. AdBlocker only routes DNS, so that option would
+  cut off everything else. On Android 10 and later, the Home screen warns you if it's on.
 - Keep **Private DNS** on *Automatic* or *Off*. A named Private DNS server bypasses the app.
 - In Chrome, keep **Settings → Privacy and security → Use secure DNS** on its default setting.
 
@@ -255,8 +280,8 @@ but the browser still shows "This site can't be reached". Two things help:
   page opened, or returns to the page you were on. A short message shows which address it was.
 
 Chrome on Android doesn't support extensions, so this setting uses Android's accessibility access
-instead. It works with Chrome, Edge, Brave, Vivaldi and Samsung Internet. I've only been able to test
-the logic behind it, not every browser, so please
+instead. It works with Chrome, Edge, Brave, Vivaldi and Samsung Internet. I've tried it with Chrome
+on the Android emulator, but not on every browser and phone, so please
 [let me know](https://github.com/teykaijun/AdBlockerPlugin/issues) if it misbehaves in yours.
 
 To turn it on, open **Settings → Close blocked pop-up tabs** in AdBlocker. It explains what the access
@@ -277,6 +302,8 @@ A few things worth knowing:
 - If a page keeps redirecting, it gives up after a few quick tries and leaves the error page.
 - If Back can't close a tab (for example one you opened yourself), the browser may go to the
   background instead. AdBlocker then leaves that page alone for half an hour.
+- Browsers hide `www.` in the address bar. If you allowed `www.example.com` but `example.com` is
+  blocked, AdBlocker can't tell which one the tab shows, so it leaves the tab alone.
 - Browsers can use a little more battery while an app with accessibility access is running.
 
 Chrome's own **Settings → Site settings → Pop-ups and redirects** and **Intrusive ads** (blocked by
@@ -286,22 +313,30 @@ default) help too.
 
 | Screen | What you can do |
 | --- | --- |
-| **Home** | Turn protection on or off and see today's numbers |
-| **Activity** | Browse and search recent lookups, with suspected scam sites marked; tap one to always allow or block it |
+| **Home** | Turn protection on or off, pause it for 10 minutes, and see today's numbers |
+| **Activity** | Browse and search recent lookups, with suspected scam sites marked. Tap one to always allow or block it, or to let it through for 10 minutes (**Block again now** ends that early); its rows then say *allowed until 14:32*. |
 | **Filters** | Turn lists on or off, add a list by URL, manage your blocked and allowed domains |
 | **Apps** | Let apps skip AdBlocker entirely, handy if one misbehaves |
 | **Settings** | Close blocked pop-up tabs, choose the DNS server, restart behaviour and Always-on VPN, install updates, and reset statistics |
 | **⋮ menu** | Support development ☕, or open the source code |
 
-There's also a Quick Settings tile and a status notification with a **Pause** button.
+There's also a Quick Settings tile, and a status notification with **Pause 10 min** and **Turn off**
+buttons. While paused, nothing is blocked; the notification, the Home screen and the tile say so,
+and **Resume** blocks again straight away. Blocking also starts again by itself after the 10 minutes,
+and turning protection off ends a pause. Apps may keep using addresses they looked up during the
+pause for a few minutes, because Android remembers DNS answers for a while.
 
 ### How the Android app works
 
 - The VPN routes a single address from a reserved documentation range (TEST-NET), and Android sends
   DNS lookups to it. Regular traffic never enters the VPN, and IPv6 traffic is left alone.
 - `DnsProxy` is one thread running a `poll()` loop over the tunnel, the upstream queries in flight and
-  a wake-up pipe. Blocked names are answered straight away; other queries time out after 10 seconds,
-  after which the next DNS server is tried.
+  a wake-up pipe. Blocked names are answered straight away. Other queries time out after 4 seconds,
+  and then the next DNS server is used from then on; a query that can't be sent at all goes to the
+  next server straight away.
+- Your own rules, allowances and the pause are kept apart from the big lists, so changing them
+  applies at once without reading the lists again. If the lists you turned on are too big for the
+  phone's memory, protection stops with a message asking you to turn one off.
 - The app excludes itself from its own VPN, so relayed queries and list downloads can't loop back in.
 - `TabCloserService` is an accessibility service that only receives events from the supported
   browsers. It reads the address bar by its view id, checks the host against the same rules the VPN
@@ -325,8 +360,10 @@ what's there, **Add Server**, and type the PC's address. Android phones, tablets
 consoles can be pointed at it the same way.
 
 - It only works on that Wi-Fi, while the PC is switched on. Mobile data is untouched.
-- Turn off **iCloud Private Relay** (Settings → your name → iCloud) if you use it, or Safari's
-  lookups go around AdBlocker.
+- **iCloud Private Relay** would send Safari's lookups around AdBlocker. AdBlocker tells Apple devices
+  that this network doesn't allow it (the way Apple documents for networks), so the iPhone should
+  offer to turn Private Relay off for this Wi-Fi. If it doesn't, turn it off yourself (Settings → your
+  name → iCloud → Private Relay).
 - `adblocker lan off` puts everything back and removes the firewall rule, as does `uninstall`.
 
 **Or use a filtering DNS service.** [NextDNS](https://nextdns.io), [AdGuard DNS](https://adguard-dns.io)
@@ -347,14 +384,17 @@ releases page. Nothing installs without you saying so.
 
 **Android.** Settings has an **Update** button. It shows the version you have, downloads the new
 APK, checks it against the `SHA256SUMS.txt` published with the release, and hands it to Android,
-which asks you to confirm. The Home screen shows a card when a new version is out. The first time,
-Android asks you to allow AdBlocker to install apps; the app links straight to that switch.
+which asks you to confirm. If Android's install screen doesn't open (for example because you
+switched apps during the download), tap **Ready to install** in Settings. The Home screen shows a
+card when a new version is out. The first time, Android asks you to allow AdBlocker to install apps;
+the app links straight to that switch.
 
 **Windows.** `adblocker upgrade` (as administrator) does the same from the terminal: it downloads
 the new `adblocker.exe` into memory, checks the checksum there, and writes exactly those bytes into
-`C:\Program Files\AdBlocker`, so nothing can swap the file in between. If the new version doesn't
-start, the previous one is put back. The service checks once a day in the background, so
-`adblocker status` tells you when something is out, and `adblocker upgrade --check` just reports
+`C:\Program Files\AdBlocker`, so nothing can swap the file in between. If the new version can't be
+put in place or doesn't start blocking, the version you had is put back and started again; the old
+copy is only removed once the new one is blocking. The service checks once a day in the background,
+so `adblocker status` tells you when something is out, and `adblocker upgrade --check` just reports
 without installing.
 
 **Browser companion.** An unpacked extension can't update itself. Its window tells you when
@@ -368,7 +408,8 @@ A few honest caveats:
   and links to the release so you can install it by hand.
 - Versions 1.4.0 and 1.5.0 downloaded updates to the temporary folder first, which another program
   running as you could have swapped in the moment before it ran as administrator. If you're on one of
-  those, please install 1.5.1 or later by hand once rather than with `upgrade`.
+  those, please install 1.6.0 by hand once (download `adblocker.exe` and run `.\adblocker.exe install`
+  as administrator) rather than with `upgrade`. Your settings are kept.
 - The check asks GitHub for the latest release and nothing else. Turn it off with the
   **Check for updates automatically** switch on Android, or `"checkForUpdates": false` in
   `config.json` on Windows.
@@ -387,7 +428,10 @@ downloadable lists below. Both apps include these files as they are:
 | `trackers` | on | Analytics, session recording, tracking pixels, app telemetry, data brokers |
 | `social` | off | Share buttons and social widgets (breaks "Log in with Facebook") |
 
-Community lists are downloaded when turned on and refreshed weekly:
+Community lists are downloaded when turned on and again once they're a week old. Windows looks every
+6 hours; Android looks every hour while protection is on and whenever the phone gets online, so a
+download that failed because the network wasn't ready is tried again (at most once an hour by
+itself; **Update now** tries at once):
 
 | ID | List | Default |
 | --- | --- | --- |
@@ -401,8 +445,13 @@ Community lists are downloaded when turned on and refreshed weekly:
 
 You can add any hosts file, plain domain list or Adblock-style domain list (`||domain^`). Rules that
 need more than a domain name (paths, `$third-party`, element hiding) are skipped, because DNS never
-sees that information. Your own blocked and allowed domains always win over the lists, and allowing
-a domain also allows its subdomains.
+sees that information.
+
+Your own blocked and allowed domains always win over the lists, and a rule for a domain covers its
+subdomains. When your own rules disagree, the one for the more specific name wins: allow
+`example.com` and block `ads.example.com`, and only `ads.example.com` (and its subdomains) stays
+blocked. Allowing a domain for a while counts as an allow until it runs out, and a pause lets
+everything through.
 
 Suggestions for domains to add to the built-in lists are very welcome.
 
@@ -431,7 +480,7 @@ windows/                         Windows app (.NET 10)
 browser-extension/               Browser companion for Chrome and Edge (Manifest V3)
   guard.js                       Decides which tabs to close or send back
   background.js, api.js          Wires it to the browser and to AdBlocker for Windows
-  test/                          Node tests for guard.js
+  test/                          Node tests, including a check that versions match both apps
 android/                         Android app (Kotlin, Jetpack Compose)
   app/src/main/java/com/teykaijun/adblocker/
     dns/  vpn/  data/  ui/
@@ -479,7 +528,9 @@ keyPassword=…
 ### Browser companion extension
 
 There's nothing to build. With Node.js 22 or later, `npm test` in `browser-extension` runs its tests,
-and **Load unpacked** on that folder lets you try changes. The release zip is the same folder without
+and **Load unpacked** on that folder lets you try changes. The tests also check that the extension's
+version and port match both apps, so `browser-extension/manifest.json`, `windows/Directory.Build.props`
+and `android/app/build.gradle.kts` are bumped together. The release zip is the same folder without
 `test/` and `package.json`.
 
 ### Automated builds and releases
@@ -500,7 +551,7 @@ settings. The service runs as LocalSystem.
 | `webNavigation` (shown as "Read your browsing history") | Notice when a page opens a tab, or a page fails to load |
 | `storage` | Keep the counts in its window until the browser closes |
 | `notifications` | Warn you when a blocked address is a known scam or fake shop |
-| Access to `http://127.0.0.1` | Ask AdBlocker for Windows whether an address is blocked |
+| Access to `http://127.0.0.1:45353` | Ask AdBlocker for Windows whether an address is blocked |
 
 **Android**
 

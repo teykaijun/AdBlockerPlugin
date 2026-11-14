@@ -51,6 +51,8 @@ internal static class Commands
                 "block" => AddRule(rest, allow: false),
                 "allow" => AddRule(rest, allow: true),
                 "forget" => ForgetRule(rest),
+                "pause" => Pause(rest),
+                "resume" => Resume(rest),
                 "check" => Check(rest),
                 "dns" => Dns(rest),
                 "lan" => Lan(rest),
@@ -72,6 +74,14 @@ internal static class Commands
         catch (UnauthorizedAccessException e)
         {
             Terminal.Error($"Access denied: {e.Message}\nRun the command from a terminal opened with \"Run as administrator\".");
+            return 1;
+        }
+        // Windows turning something down: a file in use, a service that doesn't stop in time.
+        // The message says what, which helps more than a stack trace.
+        catch (Exception e) when (e is IOException or System.ComponentModel.Win32Exception
+                                      or System.ServiceProcess.TimeoutException or InvalidOperationException)
+        {
+            Terminal.Error(e.Message);
             return 1;
         }
     }
@@ -150,6 +160,9 @@ internal static class Commands
         var log = new FileLog(Paths.ServiceLog);
         ServiceBase.Run(new AdBlockerWindowsService(async token =>
         {
+            // Before anything is written to the log: a settings folder someone else created may lead
+            // anywhere. Refusing it shows up in the event log instead.
+            Paths.EnsureCreated();
             try
             {
                 await new Blocker(Paths, new BlockerOptions(), log).RunAsync(token);
@@ -171,6 +184,9 @@ internal static class Commands
     {
         new Arguments(args, [], []).NoMoreThan(0);
         Elevation.Require("install");
+        // Before anything is stopped or replaced: a settings folder this version can't trust is
+        // reported while the version already installed keeps running.
+        Paths.EnsureCreated();
         if (SystemDns.FindAdapters([]).Count == 0 && !NetworkInterface.GetIsNetworkAvailable())
         {
             Terminal.Warn("No network connection right now. AdBlocker will switch adapters over when they connect.");
@@ -178,8 +194,10 @@ internal static class Commands
 
         var executable = ServiceManager.Install();
         Terminal.Line($"Installed {executable}");
-        StartAndConfirm();
+        // What an "upgrade" left behind stays until this version blocks, so it can still go back.
+        ServiceManager.DeleteLeftoversAfter(StartAndConfirm);
         Terminal.Ok("AdBlocker is blocking ads and will start automatically with Windows.");
+        PrintPauseNote();
         Terminal.Line("Check on it any time with \"adblocker status\". Community lists download in the background.");
         Terminal.Dim($"Optional: the browser companion closes blocked ad tabs in Chrome and Edge. {CompanionUrl}");
         PrintBrowserProblems();
@@ -194,14 +212,22 @@ internal static class Commands
 
         ServiceManager.Uninstall();
         Firewall.Remove();
-        var restored = new SystemDns(Paths).Restore();
-        if (restored.Count > 0) Terminal.Line($"Restored DNS settings of {string.Join(", ", restored)}.");
+        var left = RestoreWhatTheServiceLeft(Paths);
         Terminal.Ok("AdBlocker is uninstalled.");
 
         if (options.Flag("--purge") && Paths.Exists)
         {
-            Directory.Delete(Paths.Root, recursive: true);
-            Terminal.Line($"Deleted {Paths.Root}.");
+            // Not while a console window still needs the network settings backup in there. One that
+            // can't be read is of no use, so it doesn't keep the folder.
+            if (left != Leftovers.InUse)
+            {
+                Directory.Delete(Paths.Root, recursive: true);
+                Terminal.Line($"Deleted {Paths.Root}.");
+            }
+            else
+            {
+                Terminal.Dim($"{Paths.Root} is kept for that window. Run \"adblocker uninstall --purge\" again once it is closed.");
+            }
         }
         else if (Paths.Exists)
         {
@@ -224,26 +250,102 @@ internal static class Commands
         if (stop)
         {
             ServiceManager.Stop();
-            if (!start) Terminal.Ok("AdBlocker stopped. Ads are no longer blocked and network settings are restored.");
+            if (!start)
+            {
+                Terminal.Ok(RestoreWhatTheServiceLeft(Paths) == Leftovers.None
+                    ? "AdBlocker stopped. Ads are no longer blocked and network settings are restored."
+                    : "The AdBlocker service stopped.");
+            }
         }
         if (start)
         {
             StartAndConfirm();
             Terminal.Ok("AdBlocker is blocking ads.");
+            PrintPauseNote();
         }
         return 0;
     }
 
+    /// <summary>
+    /// Starts the service and waits until it blocks. Windows calls the service running as soon as
+    /// it has started, before AdBlocker has loaded the lists and opened port 53, and it can still
+    /// stop again after that (port 53 taken, say). It saves stats.json once the network settings
+    /// point at it, which is what this waits for.
+    /// </summary>
     private static void StartAndConfirm()
     {
-        ServiceManager.Start();
-        // The service stops again by itself if it cannot start blocking (for example if port 53 is taken).
-        Thread.Sleep(TimeSpan.FromSeconds(3));
-        if (ServiceManager.Status() is not ServiceControllerStatus.Running)
+        // A settings folder someone else created makes the service stop without a word in its log.
+        Paths.EnsureCreated();
+        var status = ServiceManager.Status();
+        if (status is ServiceControllerStatus.Running && Stats.Read(Paths.StatsFile) is { IsLive: true }) return;
+        if (status is ServiceControllerStatus.Stopped && BlockerLock.IsHeldElsewhere(Paths))
         {
-            throw new UserError($"The AdBlocker service stopped right after starting. Details are in {Paths.ServiceLog}.");
+            throw new UserError("AdBlocker is already running in a console window (\"adblocker run\"). Close it first, then try again.");
+        }
+
+        var started = DateTimeOffset.Now;
+        ServiceManager.Start();
+        var waited = Stopwatch.StartNew();
+        while (true)
+        {
+            if (ServiceManager.Status() is null or ServiceControllerStatus.Stopped or ServiceControllerStatus.StopPending)
+            {
+                throw new UserError($"The AdBlocker service stopped right after starting. Details are in {Paths.ServiceLog}.");
+            }
+            if (Stats.Read(Paths.StatsFile) is { IsLive: true } stats && stats.Updated >= started) return;
+            if (waited.Elapsed > TimeSpan.FromSeconds(30))
+            {
+                // Rather than leave it looking as if it ran; an upgrade can then also put the previous version back.
+                ServiceManager.Stop();
+                throw new UserError($"The AdBlocker service started, but it still wasn't blocking after 30 seconds, so it was stopped again. Details are in {Paths.ServiceLog}.");
+            }
+            Thread.Sleep(500);
         }
     }
+
+    /// <summary>What <see cref="RestoreWhatTheServiceLeft"/> found.</summary>
+    internal enum Leftovers
+    {
+        /// <summary>The network settings are back to normal, or were never changed.</summary>
+        None,
+
+        /// <summary>
+        /// A console window running "adblocker run" still blocks. It looks after the settings itself
+        /// and puts them back when it closes, so it needs the settings folder until then.
+        /// </summary>
+        InUse,
+
+        /// <summary>The saved settings (dns-backup.json) can't be read, so they were left as they are.</summary>
+        Unreadable,
+    }
+
+    /// <summary>
+    /// After the service stopped: puts back network settings it left pointing at AdBlocker, which
+    /// happens when it couldn't start after a crash and so never took them over. They are left to a
+    /// console window running "adblocker run", and left as they are (with a warning) when the saved
+    /// copy can't be read.
+    /// </summary>
+    internal static Leftovers RestoreWhatTheServiceLeft(AppPaths paths)
+    {
+        // First, because such a window may not have changed any settings yet (no network, say).
+        if (BlockerLock.IsHeldElsewhere(paths))
+        {
+            Terminal.Warn("AdBlocker is still running in a console window (\"adblocker run\"). Closing it puts the network settings back.");
+            return Leftovers.InUse;
+        }
+        var dns = new SystemDns(paths);
+        if (!dns.IsApplied) return Leftovers.None;
+        var restored = dns.Restore();
+        if (restored.Count > 0) Terminal.Line($"Restored the DNS settings of {string.Join(", ", restored)}.");
+        if (!dns.IsApplied) return Leftovers.None;
+        Terminal.Warn(UnreadableBackup(paths));
+        return Leftovers.Unreadable;
+    }
+
+    /// <summary>What to say when dns-backup.json exists but can't be read, so nothing could be put back.</summary>
+    private static string UnreadableBackup(AppPaths paths) =>
+        $"Could not read the saved network settings ({paths.DnsStateFile}), so they were left as they are. " +
+        "If websites don't load, set each network adapter's DNS server back to automatic in Windows Settings.";
 
     private static int Restore(string[] args)
     {
@@ -253,7 +355,10 @@ internal static class Commands
         {
             throw new UserError("The AdBlocker service is running and would switch the settings back. Use \"adblocker stop\" instead.");
         }
-        var restored = new SystemDns(Paths).Restore();
+        var dns = new SystemDns(Paths);
+        var restored = dns.Restore();
+        // A backup that can't be read restores nothing, but that doesn't mean no adapter uses AdBlocker.
+        if (restored.Count == 0 && dns.IsApplied) throw new UserError(UnreadableBackup(Paths));
         Terminal.Ok(restored.Count > 0
             ? $"Restored the DNS settings of {string.Join(", ", restored)}."
             : "Nothing to restore: no network adapter is using AdBlocker.");
@@ -331,7 +436,7 @@ internal static class Commands
         Terminal.Line($"  Allowed lookups go to: {string.Join(", ", config.Upstream)}");
         if (config.ListenOnLan)
         {
-            var own = LocalNetwork.OwnAddresses();
+            var own = LocalNetwork.LanAddresses();
             Terminal.Line($"  Other devices can use: {(own.Count > 0 ? string.Join(", ", own) : "no network address yet")}");
         }
 
@@ -346,11 +451,27 @@ internal static class Commands
         var live = stats?.IsLive == true;
         var redirected = new SystemDns(Paths).IsApplied;
 
+        // A broken config.json must not take the overview with it (a double-clicked window would just
+        // vanish). Without it, the pause and the allowances are simply not shown.
+        AppConfig? config = null;
+        try
+        {
+            config = ConfigStore.Load(Paths);
+        }
+        catch (UserError)
+        {
+        }
+        var now = DateTimeOffset.Now;
+
         string state;
         if (service is ServiceControllerStatus.Running && live) state = "ON (Windows service)";
         else if (service is ServiceControllerStatus.Running) state = "starting (Windows service)";
         else if (live) state = "ON (running in a console window)";
         else state = "OFF";
+        if (config?.PausedUntil is { } until && until > now && state.StartsWith("ON", StringComparison.Ordinal))
+        {
+            state = $"PAUSED until {Durations.EndTime(until, now)} (\"adblocker resume\" blocks again)";
+        }
 
         Terminal.Pairs(
             ("Blocking", state),
@@ -365,6 +486,12 @@ internal static class Commands
         {
             Terminal.Warn("  Network adapters still point at AdBlocker, which is not running, so websites may not load.");
             Terminal.Warn("  Fix it with \"adblocker restore\" (as administrator) or start AdBlocker again.");
+        }
+
+        var temporary = new TemporaryAllowances(config?.TemporarilyAllowed).Active(now);
+        if (temporary.Count > 0)
+        {
+            Terminal.Pairs(("Allowed for now", string.Join(", ", temporary.Select(t => $"{t.Domain} until {Durations.EndTime(t.Until, now)}"))));
         }
 
         if (Updates.Read(Paths)?.Version is { } newer && Updates.IsNewer(newer, AppInfo.Version))
@@ -393,6 +520,12 @@ internal static class Commands
         foreach (var text in BrowserCheck.Problems()) Problem(text);
 
         var config = ConfigStore.Load(Paths);
+        var now = DateTimeOffset.Now;
+        if (config.PausedUntil is { } paused && paused > now)
+        {
+            Problem($"Blocking is paused until {Durations.EndTime(paused, now)}. Run \"adblocker resume\" as administrator to block again.");
+        }
+
         var live = Stats.Read(Paths.StatsFile)?.IsLive == true;
         foreach (var adapter in SystemDns.FindAdapters(config.ExcludedAdapters))
         {
@@ -402,9 +535,19 @@ internal static class Commands
             {
                 Problem($"{adapter.Name}: Windows reports DNS setting \"{api}\" but the registry has \"{ipv4}\".");
             }
-            if (live && !SystemDns.IsLoopbackSetting(ipv4))
+            if (!live) continue;
+            if (!SystemDns.IsLoopbackSetting(ipv4))
             {
                 Problem($"{adapter.Name} does not use AdBlocker for DNS, so ads can get through it. Restart AdBlocker to fix this.");
+                continue;
+            }
+            // What Windows really asks, IPv6 included: the IPv6 setting may not have been switched
+            // (AdBlocker couldn't listen on [::1]), and a router can hand out IPv6 DNS servers.
+            var others = adapter.DnsServers.Where(UpstreamSettings.IsUsable).ToList();
+            if (others.Count > 0)
+            {
+                Problem($"{adapter.Name} still sends lookups to {string.Join(", ", others)} as well, so ads can get through it. " +
+                        "Restarting AdBlocker may fix it.");
             }
         }
 
@@ -470,37 +613,81 @@ internal static class Commands
                                 "Download the new version yourself and run \"adblocker install\".");
         }
 
-        var lastReported = 0;
-        var executable = await Updates.DownloadVerifiedAsync(release, http, percent =>
+        byte[] executable;
+        try
         {
-            if (percent < lastReported + 25 && percent != 100) return;
-            lastReported = percent;
-            Terminal.Dim($"  downloading... {percent}%");
-        }, CancellationToken.None);
+            // The client's own timeout doesn't cover reading the file itself, which could then stall for good.
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+            var lastReported = 0;
+            executable = await Updates.DownloadVerifiedAsync(release, http, percent =>
+            {
+                if (percent < lastReported + 25 && percent != 100) return;
+                lastReported = percent;
+                Terminal.Dim($"  downloading... {percent}%");
+            }, timeout.Token);
+        }
+        catch (Exception e) when (e is HttpRequestException or IOException or OperationCanceledException)
+        {
+            throw new UserError($"Could not download {release.Version}: {(e is OperationCanceledException ? "it took too long." : e.Message)}");
+        }
         Terminal.Ok("Downloaded, and the checksum matches the one published with the release.");
 
         // Straight from memory into Program Files, then the new version installs itself from there.
         Terminal.Line($"Installing {release.Version}...");
-        ServiceManager.PutInPlace(executable);
         try
         {
+            ServiceManager.PutInPlace(executable);
             using var install = Process.Start(new ProcessStartInfo(ServiceManager.InstalledExecutable, "install") { UseShellExecute = false })
                                 ?? throw new UserError("Could not start the new version.");
             await install.WaitForExitAsync();
             if (install.ExitCode != 0) throw new UserError($"The new version could not install itself (exit code {install.ExitCode}).");
         }
-        catch (Exception e) when (e is System.ComponentModel.Win32Exception or UserError)
+        catch (Exception e) when (e is System.ComponentModel.Win32Exception or UserError or IOException or UnauthorizedAccessException)
         {
             // AdBlocker is not code-signed, so Smart App Control or SmartScreen can refuse to run it.
-            var restored = ServiceManager.RestorePrevious();
-            if (restored) StartAndConfirm();
+            var wentBack = GoBack();
             throw new UserError(
-                $"The new version did not start: {e.Message}\n" +
-                (restored ? $"AdBlocker {AppInfo.Version} is back in place and blocking.\n" : "") +
+                $"AdBlocker {release.Version} could not be installed: {e.Message}\n{wentBack}\n" +
                 $"You can download {release.Version} from {release.PageUrl} and run \"adblocker install\" as administrator.");
         }
-        Terminal.Ok($"AdBlocker {release.Version} is installed and blocking.");
+        // The new version's install has already said so if a pause saved in config.json is still on.
+        Terminal.Ok(ActivePause() is { } until
+            ? $"AdBlocker {release.Version} is installed. Blocking is paused until {Until(until)}."
+            : $"AdBlocker {release.Version} is installed and blocking.");
         return 0;
+    }
+
+    /// <summary>After a failed upgrade: puts the version that was installed back and starts it. Says how that went.</summary>
+    private static string GoBack()
+    {
+        try
+        {
+            if (!ServiceManager.RestorePrevious())
+            {
+                // The new version removes the previous one only once it blocks, and is left running then.
+                return ServiceManager.IsRunning
+                    ? "The version you had could not be put back, but the new version is running and stays installed. Check on it with \"adblocker status\"."
+                    : "The version you had could not be put back, so AdBlocker is off for now.";
+            }
+        }
+        catch (Exception e) when (e is UserError or IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception
+                                      or InvalidOperationException or System.ServiceProcess.TimeoutException)
+        {
+            return $"Putting the version you had back didn't work either: {e.Message}";
+        }
+        try
+        {
+            StartAndConfirm();
+            return ActivePause() is { } until
+                ? $"The version you had is back in place. Blocking is paused until {Until(until)}."
+                : "The version you had is back in place and blocking.";
+        }
+        catch (Exception e) when (e is UserError or IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception
+                                      or InvalidOperationException or System.ServiceProcess.TimeoutException)
+        {
+            // Whatever stopped the new version (port 53 taken, say) may stop this one too.
+            return $"The version you had is back in place, but it didn't start either: {e.Message}";
+        }
     }
 
     // ----------------------------------------------------------------------------------------------
@@ -589,7 +776,7 @@ internal static class Commands
             throw new UserError("That list is already added.");
         }
 
-        var id = $"custom-{DateTime.UtcNow:yyyyMMddHHmmss}";
+        var id = NewListId(FilterLists.CommunityLists(config).Select(l => l.Id), DateTime.UtcNow);
         var list = new CommunityList(id, title ?? uri.Host, url, "Added by you", Enabled: true, Custom: true);
         var result = DownloadNow(list);
         if (result.Error is not null) return 1;
@@ -612,6 +799,19 @@ internal static class Commands
         new FilterLists(Paths).DeleteCached(id.ToLowerInvariant());
         Terminal.Ok($"Removed {id}.");
         PrintChangeNote();
+    }
+
+    /// <summary>
+    /// An id for a list added by URL, such as "custom-20261114153000", that no list has yet. A script
+    /// can add two lists within a second, so "-2", "-3" and so on follow when needed.
+    /// </summary>
+    internal static string NewListId(IEnumerable<string> taken, DateTime utcNow)
+    {
+        var used = taken.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var id = $"custom-{utcNow.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture)}";
+        var candidate = id;
+        for (var n = 2; used.Contains(candidate); n++) candidate = $"{id}-{n}";
+        return candidate;
     }
 
     private static async Task<int> Update(string[] args)
@@ -648,25 +848,39 @@ internal static class Commands
 
     private static int AddRule(string[] args, bool allow)
     {
-        var options = new Arguments(args, [], []);
+        var options = new Arguments(args, valued: ["--for"], flags: []);
         options.NoMoreThan(1);
         var input = options.Required(0, "domain");
         var domain = RuleParser.NormalizeDomain(input) ?? throw new UserError($"\"{input}\" is not a domain like ads.example.com.");
+        var duration = options.Value("--for") is { } text ? Durations.Parse(text) : (TimeSpan?)null;
+        if (duration is not null && !allow) throw new UserError("--for only works with \"allow\". Blocking is always permanent.");
         Elevation.Require(allow ? "allow" : "block");
 
-        ConfigStore.Update(Paths, c =>
+        var now = DateTimeOffset.Now;
+        var until = now + duration;
+        ConfigStore.Update(Paths, c => ApplyRule(c, domain, allow, until, now));
+        if (duration is { } span)
         {
-            c.BlockedDomains.RemoveAll(d => d.Equals(domain, StringComparison.OrdinalIgnoreCase));
-            c.AllowedDomains.RemoveAll(d => d.Equals(domain, StringComparison.OrdinalIgnoreCase));
-            (allow ? c.AllowedDomains : c.BlockedDomains).Add(domain);
-            c.AllowedDomains.Sort(StringComparer.Ordinal);
-            c.BlockedDomains.Sort(StringComparer.Ordinal);
-        });
-        Terminal.Ok(allow
-            ? $"{domain} and its subdomains will never be blocked."
-            : $"{domain} and its subdomains will always be blocked.");
+            Terminal.Ok($"{domain} and its subdomains are allowed for {Durations.Describe(span)}, until {Until(now + span)}.");
+        }
+        else
+        {
+            Terminal.Ok(allow
+                ? $"{domain} and its subdomains will never be blocked."
+                : $"{domain} and its subdomains will always be blocked.");
+        }
         PrintChangeNote();
         return 0;
+    }
+
+    /// <summary>
+    /// What "allow" and "block" change: an allowance until <paramref name="until"/>, or a permanent
+    /// rule, which ends an allowance for the same domain so that it applies at once.
+    /// </summary>
+    internal static void ApplyRule(AppConfig config, string domain, bool allow, DateTimeOffset? until, DateTimeOffset now)
+    {
+        if (until is { } end) ConfigRules.AllowFor(config, domain, end, now);
+        else ConfigRules.SetRule(config, domain, allow, now);
     }
 
     private static int ForgetRule(string[] args)
@@ -678,13 +892,41 @@ internal static class Commands
         Elevation.Require("forget");
 
         var removed = 0;
-        ConfigStore.Update(Paths, c =>
-        {
-            removed += c.BlockedDomains.RemoveAll(d => d.Equals(domain, StringComparison.OrdinalIgnoreCase));
-            removed += c.AllowedDomains.RemoveAll(d => d.Equals(domain, StringComparison.OrdinalIgnoreCase));
-        });
+        ConfigStore.Update(Paths, c => removed = ConfigRules.Forget(c, domain, DateTimeOffset.Now));
         if (removed == 0) throw new UserError($"You have no rule for {domain}.");
         Terminal.Ok($"Removed your rule for {domain}; the filter lists decide again.");
+        PrintChangeNote();
+        return 0;
+    }
+
+    /// <summary>Lets every lookup through for a while, for when a site breaks.</summary>
+    private static int Pause(string[] args)
+    {
+        var options = new Arguments(args, [], []);
+        options.NoMoreThan(1);
+        var duration = Durations.Parse(options.Positional.FirstOrDefault() ?? "10",
+            tooLong: "That's longer than a day. To turn blocking off until you turn it on again, use \"adblocker stop\" and \"adblocker start\".");
+        Elevation.Require("pause");
+        var until = DateTimeOffset.Now + duration;
+        ConfigStore.Update(Paths, c => c.PausedUntil = until);
+        Terminal.Ok($"Blocking is paused for {Durations.Describe(duration)}, until {Until(until)}.");
+        Terminal.Dim("Run \"adblocker resume\" to start blocking again sooner.");
+        PrintChangeNote();
+        return 0;
+    }
+
+    private static int Resume(string[] args)
+    {
+        new Arguments(args, [], []).NoMoreThan(0);
+        // Nothing to write then, so the service has nothing to reload either.
+        if (ConfigStore.Load(Paths).PausedUntil is not { } until || until <= DateTimeOffset.Now)
+        {
+            Terminal.Ok("AdBlocker wasn't paused.");
+            return 0;
+        }
+        Elevation.Require("resume");
+        ConfigStore.Update(Paths, c => c.PausedUntil = null);
+        Terminal.Ok("Blocking again.");
         PrintChangeNote();
         return 0;
     }
@@ -697,28 +939,82 @@ internal static class Commands
         var domain = (Uri.TryCreate(input, UriKind.Absolute, out var uri) && uri.Host.Length > 0 ? uri.Host : input).Trim().TrimEnd('.').ToLowerInvariant();
         if (domain.Length == 0) throw new UserError("Missing domain.");
 
-        var config = ConfigStore.Load(Paths);
-        var lists = new FilterLists(Paths);
-        var match = lists.BuildMatcher(config).Match(domain);
-        if (match.Rule is null)
-        {
-            Terminal.Ok($"{domain} is not blocked.");
-            return 0;
-        }
-
-        var sources = lists.FindSources(config, match.Rule, allow: !match.Blocked);
-        var where = sources.Count > 0 ? $" by {string.Join(", ", sources)}" : "";
-        var rule = match.Rule == domain ? domain : $"{match.Rule} (which covers {domain})";
-        if (match.Blocked)
-        {
-            Terminal.Warn($"{domain} is BLOCKED: {rule} is listed{where}.");
-            Terminal.Dim($"To allow it: adblocker allow {domain}");
-        }
-        else
-        {
-            Terminal.Ok($"{domain} is allowed: {rule} is an exception{where}.");
-        }
+        var answer = CheckDomain(new FilterLists(Paths), ConfigStore.Load(Paths), domain, DateTimeOffset.Now);
+        if (answer.Blocked) Terminal.Warn(answer.Verdict);
+        else Terminal.Ok(answer.Verdict);
+        foreach (var note in answer.Notes) Terminal.Dim(note);
         return 0;
+    }
+
+    /// <summary>What "adblocker check" says: the verdict (a warning when blocked) and notes below it.</summary>
+    internal sealed record CheckAnswer(string Verdict, bool Blocked, IReadOnlyList<string> Notes);
+
+    /// <summary>
+    /// What "adblocker check" says about <paramref name="domain"/>, worked out the way the running
+    /// blocker decides, so it tells what DNS does right now.
+    /// </summary>
+    internal static CheckAnswer CheckDomain(FilterLists lists, AppConfig config, string domain, DateTimeOffset now)
+    {
+        var explanation = lists.Explain(config, domain, now);
+        // Once a pause is over, an allowance that runs longer still decides; only then is it worth asking again.
+        var afterPause = explanation.Decision is { Kind: RuleKind.Paused, Until: { } pauseEnd }
+                         && new TemporaryAllowances(config.TemporarilyAllowed).Allows(domain, pauseEnd)
+            ? lists.Explain(config, domain, pauseEnd).Decision
+            : explanation.Lasting;
+        return DescribeCheck(explanation, afterPause, now);
+    }
+
+    /// <param name="afterPause">
+    /// What decides once a pause is over: <see cref="Explanation.Lasting"/>, unless an allowance runs longer.
+    /// </param>
+    private static CheckAnswer DescribeCheck(Explanation e, Decision afterPause, DateTimeOffset now)
+    {
+        var domain = e.Domain;
+        string Covering(string? rule) => rule is null || rule == domain ? domain : $"{rule} (which covers {domain})";
+        var by = e.Sources.Count > 0 ? $" by {string.Join(", ", e.Sources)}" : "";
+        // Why the rules that last block or allow it. When nothing temporary decides, that is also why right now.
+        var why = e.Lasting switch
+        {
+            { Kind: RuleKind.UserBlock } => $"you blocked {Covering(e.Lasting.Rule)}",
+            { Kind: RuleKind.UserAllow } => $"you allowed {Covering(e.Lasting.Rule)}",
+            { Kind: RuleKind.Canary } => $"{Covering(e.Lasting.Rule)} is blocked{by}",
+            { Kind: RuleKind.ListAllow } => $"{Covering(e.Lasting.Rule)} is an exception{by}",
+            { Kind: RuleKind.ListBlock } => $"{Covering(e.Lasting.Rule)} is listed{by}",
+            _ => null,
+        };
+        var notBlocked = why is null ? $"{domain} is not blocked." : $"{domain} is allowed: {why}.";
+        string[] blockedLater = e.Lasting.Blocked ? [$"After that it is blocked: {why}.", $"To always allow it: adblocker allow {domain}"] : [];
+
+        switch (e.Decision)
+        {
+            case { Kind: RuleKind.Paused, Until: { } pause }:
+                if (afterPause is { Kind: RuleKind.TemporaryAllow, Until: { } allowed })
+                {
+                    return new($"{domain} loads for now: blocking is paused until {Durations.EndTime(pause, now)}, " +
+                               $"and you allowed {Covering(afterPause.Rule)} until {Durations.EndTime(allowed, now)}.", false, blockedLater);
+                }
+                if (e.Lasting.Blocked)
+                {
+                    return new($"{domain} loads for now: blocking is paused until {Durations.EndTime(pause, now)}. After that it is blocked: {why}.",
+                        false, [$"To always allow it: adblocker allow {domain}"]);
+                }
+                return new(notBlocked, false, [$"Blocking is paused until {Durations.EndTime(pause, now)}."]);
+            case { Kind: RuleKind.TemporaryAllow, Until: { } until }:
+                return new($"{domain} is allowed for now: you allowed {Covering(e.Decision.Rule)} until {Durations.EndTime(until, now)}.", false, blockedLater);
+            case { Kind: RuleKind.Canary }:
+                return new($"{domain} is BLOCKED: {why}.", true,
+                    ["AdBlocker blocks it on purpose: allowing it lets browsers or phones go around AdBlocker."]);
+            case { Blocked: true }:
+            {
+                var notes = new List<string>();
+                if (e.Scam) notes.Add("It's on a list of scams and fake shops, so take care before allowing it.");
+                notes.Add($"To allow it: adblocker allow {domain}");
+                notes.Add($"Just for a while: adblocker allow {domain} --for 10m");
+                return new($"{domain} is BLOCKED: {why}.", true, notes);
+            }
+            default:
+                return new(notBlocked, false, []);
+        }
     }
 
     private static int Dns(string[] args)
@@ -730,7 +1026,7 @@ internal static class Commands
             Terminal.Pairs(("Setting", string.Join(" ", config.Upstream)));
             var automatic = new SystemDns(Paths).OriginalServers(config.ExcludedAdapters);
             using var http = DohUpstream.CreateClient();
-            var servers = UpstreamSettings.Create(config.Upstream, automatic, http);
+            var servers = UpstreamSettings.Create(config.Upstream, automatic, http, LocalNetwork.AnsweredByAdBlocker(config.ListenOnLan));
             Terminal.Pairs(("Servers", string.Join(", ", servers.Select(s => s.Name))));
             Terminal.Line();
             Terminal.Dim($"Change it with \"adblocker dns <server>...\": auto, {string.Join(", ", UpstreamSettings.Presets.Keys)}, an IP address or an https:// URL.");
@@ -738,13 +1034,20 @@ internal static class Commands
         }
 
         var entries = options.Positional.ToList();
+        // While AdBlocker serves the network, this PC's own addresses are refused too: it would be asking itself.
+        var self = LocalNetwork.AnsweredByAdBlocker(config.ListenOnLan);
         foreach (var entry in entries)
         {
-            if (UpstreamSettings.Validate(entry) is { } problem) throw new UserError(problem);
+            if (UpstreamSettings.Validate(entry, self) is { } problem) throw new UserError(problem);
         }
         Elevation.Require("dns");
         ConfigStore.Update(Paths, c => c.Upstream = entries);
         Terminal.Ok($"Allowed lookups now go to: {string.Join(" ", entries)}");
+        if (!entries.Contains(UpstreamSettings.Auto, StringComparer.OrdinalIgnoreCase))
+        {
+            Terminal.Dim("Hotel and airport sign-in pages, and router names such as printer.lan, may not resolve now. " +
+                         "\"adblocker dns auto\" switches back.");
+        }
         PrintChangeNote();
         return 0;
     }
@@ -792,7 +1095,7 @@ internal static class Commands
             Terminal.Ok("AdBlocker only answers this PC.");
             return;
         }
-        var addresses = LocalNetwork.OwnAddresses();
+        var addresses = LocalNetwork.LanAddresses();
         Terminal.Ok("AdBlocker answers other devices on your network.");
         Terminal.Pairs(("This PC", addresses.Count > 0 ? string.Join(", ", addresses) : "no network address yet"));
         if (!Firewall.Exists())
@@ -882,8 +1185,9 @@ internal static class Commands
         return tail.ToList();
     }
 
-    private static void PrintLogLine(string line)
+    private static void PrintLogLine(string raw)
     {
+        var line = Terminal.PrintableLine(raw);
         if (line.Contains("  SCAM     ", StringComparison.Ordinal)) Terminal.Error(line);
         else if (line.Contains("  BLOCKED  ", StringComparison.Ordinal)) Terminal.Warn(line);
         else Terminal.Dim(line);
@@ -916,7 +1220,11 @@ internal static class Commands
               check <domain>         Is a domain blocked, and by which list?
               block <domain> *       Always block a domain and its subdomains
               allow <domain> *       Never block a domain and its subdomains
-              forget <domain> *      Remove your own rule for a domain
+                  --for 10m          Only for a while: minutes (10m) or hours (2h), up to a day
+              forget <domain> *      Remove your own rule for a domain (also ends an allow --for)
+              pause [10m] *          Let everything through for a while (10 minutes if not given),
+                                     also for devices that use this PC through "lan on"
+              resume *               Block again before the pause runs out
               log [-n 30] [-f]       Show recently blocked domains (-f keeps following)
 
             Lists and DNS
@@ -930,7 +1238,10 @@ internal static class Commands
                                      (an iPhone can then use this PC as its DNS server)
               dns [server...] *      Show, or set, where allowed lookups go:
                                      auto (your network's DNS, the default), cloudflare, quad9,
-                                     google (these three use encrypted DNS), an IP address or an https:// URL
+                                     google (these three use encrypted DNS), an IP address or an https:// URL.
+                                     With cloudflare, quad9 or google, hotel and airport sign-in pages and
+                                     router names such as printer.lan may not resolve; "adblocker dns auto"
+                                     switches back.
 
             Updating
               upgrade [--check] *    Download the latest version from GitHub and install it
@@ -985,6 +1296,28 @@ internal static class Commands
         {
             Terminal.Dim("AdBlocker picks this up within a few seconds.");
         }
+    }
+
+    /// <summary>An end time from now on, with the day when it isn't today (see <see cref="Durations.EndTime"/>).</summary>
+    private static string Until(DateTimeOffset end) => Durations.EndTime(end, DateTimeOffset.Now);
+
+    /// <summary>When a pause saved in config.json ends, or null when blocking. A config.json that can't be read counts as no pause.</summary>
+    private static DateTimeOffset? ActivePause()
+    {
+        try
+        {
+            return ConfigStore.Load(Paths).PausedUntil is { } until && until > DateTimeOffset.Now ? until : null;
+        }
+        catch (UserError)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>After a start: a pause survives restarts, so "blocking" isn't quite true until it ends.</summary>
+    private static void PrintPauseNote()
+    {
+        if (ActivePause() is { } until) Terminal.Warn($"Blocking is paused until {Until(until)}. Run \"adblocker resume\" to block now.");
     }
 
     private static void PrintBrowserProblems()

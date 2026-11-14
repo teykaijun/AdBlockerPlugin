@@ -1,8 +1,10 @@
 package com.teykaijun.adblocker.tabs
 
 import com.teykaijun.adblocker.dns.DomainMatcher
+import com.teykaijun.adblocker.dns.UserRules
 import java.io.File
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -120,6 +122,37 @@ class TabGuardTest {
         clock += TabGuard.BACK_LIMIT_GAP_MS
         show("bouncer.example.org")
         assertEquals("ads.example.com", show("ads.example.com"))
+    }
+
+    @Test
+    fun `stops after many quick Backs across a browser's windows`() {
+        // An app that keeps opening a custom tab to a blocked address gets a new window each time.
+        repeat(TabGuard.BROWSER_BACK_LIMIT_TIMES) { i ->
+            assertEquals("ads.example.com", show("ads.example.com", window = i + 1))
+            clock += 1_000
+        }
+        assertNull(show("ads.example.com", window = TabGuard.BROWSER_BACK_LIMIT_TIMES + 1))
+
+        // Other browsers aren't affected, and a while later it works again.
+        assertEquals("ads.example.com", show("ads.example.com", window = 50, browser = EDGE))
+        clock += TabGuard.BACK_LIMIT_GAP_MS
+        assertEquals("ads.example.com", show("ads.example.com", window = 51))
+    }
+
+    @Test
+    fun `counts an allow for the www name that the browser hides`() {
+        val lists = DomainMatcher(blocked = setOf("shop.example"), allowed = emptySet())
+        assertTrue(blockedAsShown("shop.example", lists::isBlocked))
+        assertTrue(blockedAsShown("www.shop.example", lists::isBlocked))
+        assertFalse(blockedAsShown("shop.example", DomainMatcher(blocked = setOf("shop.example"), allowed = setOf("www.shop.example"))::isBlocked))
+
+        // The Activity screen allows the name that was looked up, www included.
+        val now = 1_000_000_000L
+        val user = UserRules(allowedUntil = mapOf("www.shop.example" to now + 60_000))
+        val blocks = { host: String -> user.isBlocked(host, lists, now) }
+        assertFalse(blockedAsShown("shop.example", blocks))
+        assertNull(guard.onAddressBar(CHROME, 1, AddressBar.Showing("https://shop.example/basket")) { blockedAsShown(it, blocks) })
+        assertTrue(blockedAsShown("other.shop.example", blocks))
     }
 
     @Test

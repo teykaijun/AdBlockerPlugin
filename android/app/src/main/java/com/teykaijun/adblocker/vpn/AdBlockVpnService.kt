@@ -33,7 +33,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.dropWhile
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
@@ -51,6 +51,8 @@ class AdBlockVpnService : VpnService() {
     private var tunnel: ParcelFileDescriptor? = null
     private var proxy: DnsProxy? = null
     private var proxyThread: Thread? = null
+    /** What the status notification shows now, so it is only posted again when that changes. */
+    private var shownStatus: ProtectionStatus? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
@@ -89,13 +91,20 @@ class AdBlockVpnService : VpnService() {
         }
         try {
             val settings = app.settings.settings.value
-            establish(settings, app.filters.buildRules(settings))
-            VpnController.setState(VpnState.Running(System.currentTimeMillis()))
-            app.filters.refreshStale(settings)
+            val builtFrom = ruleInputs(settings) to app.filters.revision.value
+            val rules = app.filters.buildRules(settings)
+            // Reading the lists takes a while; start with whatever the user changed meanwhile.
+            val current = app.settings.settings.value
+            VpnController.userRules = current.userRules()
+            establish(current, rules)
+            VpnController.setState(running())
             coroutineScope {
-                launch { reloadRulesOnChange() }
-                launch { reconnectWhenBypassAppsChange() }
+                launch { reloadRulesOnChange(builtFrom) }
+                launch { followUserRules() }
+                launch { reconnectWhenBypassAppsChange(current.bypassApps) }
                 launch { followUpstreamServers() }
+                launch { refreshListsWhenDue() }
+                launch { forgetPausesAndAllowancesWhenOver() }
                 launch { publishStats() }
             }
         } catch (e: CancellationException) {
@@ -138,6 +147,7 @@ class AdBlockVpnService : VpnService() {
 
         val newProxy = DnsProxy(newTunnel.fileDescriptor, { socket -> protect(socket) }, ::onQuery)
         newProxy.matcher = rules.matcher
+        newProxy.userRules = VpnController.userRules
         VpnController.rules = rules
         newProxy.network = app.network.snapshot.value.network
         newProxy.upstreamServers = upstreamServers(settings)
@@ -174,12 +184,13 @@ class AdBlockVpnService : VpnService() {
         true
     }
 
-    private suspend fun reloadRulesOnChange() {
+    /** @param builtFrom what the running rules were built from; a change made while they were built still counts. */
+    private suspend fun reloadRulesOnChange(builtFrom: Pair<List<Any>, Int>) {
         combine(app.settings.settings.map { ruleInputs(it) }.distinctUntilChanged(), app.filters.revision) { inputs, revision ->
             inputs to revision
         }
             .distinctUntilChanged()
-            .drop(1)
+            .dropWhile { it == builtFrom }
             .collectLatest {
                 val rules = app.filters.buildRules(app.settings.settings.value)
                 proxy?.let {
@@ -189,9 +200,51 @@ class AdBlockVpnService : VpnService() {
             }
     }
 
-    private suspend fun reconnectWhenBypassAppsChange() {
-        app.settings.settings.map { it.bypassApps }.distinctUntilChanged().drop(1).collect {
+    /** The user's own rules, allowances and pause are small, so they are swapped in without rebuilding the lists. */
+    private suspend fun followUserRules() {
+        app.settings.settings.collect { settings ->
+            val rules = settings.userRules()
+            VpnController.userRules = rules
+            proxy?.userRules = rules
+            updateStatusNotification() // it says whether blocking is paused
+        }
+    }
+
+    /**
+     * A pause or an allowance ends on time by itself, because every lookup checks the clock. This
+     * then tidies it out of the settings, so the notification and the screens switch back too.
+     */
+    private suspend fun forgetPausesAndAllowancesWhenOver() {
+        app.settings.settings.map { it.nextExpiry() }.distinctUntilChanged().collectLatest { end ->
+            if (end == null) return@collectLatest
+            while (true) {
+                val left = end - System.currentTimeMillis()
+                if (left <= 0) break
+                delay(left)
+            }
+            app.settings.update { it.withoutExpired() }
+        }
+    }
+
+    /** @param establishedWith the apps the running tunnel lets bypass it. */
+    private suspend fun reconnectWhenBypassAppsChange(establishedWith: Set<String>) {
+        app.settings.settings.map { it.bypassApps }.distinctUntilChanged().dropWhile { it == establishedWith }.collect {
             establish(app.settings.settings.value, VpnController.rules ?: Rules.EMPTY)
+        }
+    }
+
+    /**
+     * Community lists are refreshed weekly. Look for stale ones every hour while protection is
+     * on, and whenever the phone gets online, which also retries a download that failed because
+     * the network wasn't up yet.
+     */
+    private suspend fun refreshListsWhenDue() {
+        app.network.snapshot.map { it.network }.distinctUntilChanged().collectLatest { network ->
+            if (network == null) return@collectLatest
+            while (true) {
+                app.filters.refreshStale(app.settings.settings.value)
+                delay(LIST_CHECK_INTERVAL_MS)
+            }
         }
     }
 
@@ -210,15 +263,47 @@ class AdBlockVpnService : VpnService() {
         while (true) {
             delay(1_000)
             app.stats.publish()
-            if (++seconds % 10 == 0) {
-                app.stats.persist()
-                Notifications.updateProtection(this, app.stats.totals.value)
+            seconds++
+            if (seconds % 10 == 0) {
+                updateStatusNotification()
+                refreshRunningState()
             }
+            // shutDown() saves them too.
+            if (seconds % 60 == 0) app.stats.persist()
         }
     }
 
-    private fun ruleInputs(s: Settings): List<Any> =
-        listOf(s.builtInLists, s.remoteLists.filter { it.enabled }.map { it.id }, s.blockedDomains, s.allowedDomains)
+    private fun protectionStatus() = ProtectionStatus(
+        blockedToday = app.stats.totals.value.blockedToday,
+        pausedUntil = app.settings.settings.value.pausedUntil?.takeIf { it > System.currentTimeMillis() },
+    )
+
+    /** Posts the status notification again, but only when what it shows has changed. */
+    private fun updateStatusNotification() {
+        val status = protectionStatus()
+        if (status == shownStatus) return
+        shownStatus = status
+        Notifications.updateProtection(this, status)
+    }
+
+    /** Running, and whether Android keeps the VPN on and blocks everything without it. */
+    private fun running(since: Long = System.currentTimeMillis()): VpnState.Running {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return VpnState.Running(since)
+        return VpnState.Running(since, alwaysOn = isAlwaysOn, lockdown = isLockdownEnabled)
+    }
+
+    /**
+     * Android switches Always-on VPN and "Block connections without VPN" without restarting a VPN
+     * that is already connected, so look again now and then; Home shows both.
+     */
+    private fun refreshRunningState() {
+        val current = VpnController.state.value as? VpnState.Running ?: return
+        val latest = running(current.since)
+        if (latest != current) VpnController.setState(latest)
+    }
+
+    /** What the lists are built from. The user's own rules don't need a rebuild; see [followUserRules]. */
+    private fun ruleInputs(s: Settings): List<Any> = listOf(s.builtInLists, s.remoteLists.filter { it.enabled }.map { it.id })
 
     private fun upstreamServers(settings: Settings): List<InetAddress> {
         val chosen = when (settings.dnsProvider) {
@@ -250,7 +335,9 @@ class AdBlockVpnService : VpnService() {
             0
         }
         try {
-            ServiceCompat.startForeground(this, Notifications.PROTECTION_ID, Notifications.protection(this, app.stats.totals.value), type)
+            val status = protectionStatus()
+            ServiceCompat.startForeground(this, Notifications.PROTECTION_ID, Notifications.protection(this, status), type)
+            shownStatus = status
         } catch (e: RuntimeException) {
             // Android can refuse this for background starts; a connected VPN is kept alive anyway.
             Log.w(TAG, "Could not show the foreground notification", e)
@@ -272,6 +359,8 @@ class AdBlockVpnService : VpnService() {
         session?.cancel()
         session = null
         releaseTunnel()
+        // A pause only means something while protection is on, so turning it off ends one.
+        app.settings.update { it.copy(pausedUntil = null) }
         app.stats.persist()
         app.stats.publish()
         VpnController.setState(state)
@@ -287,6 +376,9 @@ class AdBlockVpnService : VpnService() {
         private val SUBNETS = listOf("192.0.2", "198.51.100", "203.0.113")
         private val WARNING_REPEAT_MS = TimeUnit.HOURS.toMillis(1)
         private const val MAX_WARNED = 256
+        // A failed download waits an hour too (see isDue), so the next check tries it again. A check
+        // only compares dates, and waiting doesn't wake a sleeping phone, so this costs nothing.
+        private val LIST_CHECK_INTERVAL_MS = TimeUnit.HOURS.toMillis(1)
 
         fun intent(context: Context, action: String): Intent =
             Intent(context, AdBlockVpnService::class.java).setAction(action)

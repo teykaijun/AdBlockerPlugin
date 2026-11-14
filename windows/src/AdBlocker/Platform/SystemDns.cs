@@ -29,6 +29,16 @@ public sealed class SavedAdapter
 
 public sealed record AdapterInfo(string Id, string Name, string Description, IReadOnlyList<IPAddress> DnsServers);
 
+/// <summary>What <see cref="SystemDns.Apply"/> did.</summary>
+/// <param name="Changed">Adapters that now point at AdBlocker and did not before.</param>
+/// <param name="Failed">Adapters Windows refused to change, with the reason.</param>
+/// <param name="Adapters">How many adapters there were to switch over.</param>
+public sealed record ApplyResult(IReadOnlyList<string> Changed, IReadOnlyList<(string Adapter, string Error)> Failed, int Adapters)
+{
+    /// <summary>There were adapters to switch over, and Windows refused every one of them.</summary>
+    public bool NothingSwitched => Adapters > 0 && Failed.Count == Adapters;
+}
+
 /// <summary>
 /// Points the network adapters at AdBlocker's DNS server on 127.0.0.1 / ::1 and puts
 /// the original settings back afterwards. The originals are saved to disk before
@@ -96,11 +106,12 @@ public sealed class SystemDns(AppPaths paths)
         return servers.Where(UpstreamSettings.IsUsable).Distinct().ToList();
     }
 
-    /// <summary>Points every adapter at AdBlocker. Returns the names of the adapters that changed.</summary>
-    public IReadOnlyList<string> Apply(IReadOnlyCollection<string> excluded, bool includeIPv6)
+    /// <summary>Points every adapter at AdBlocker.</summary>
+    public ApplyResult Apply(IReadOnlyCollection<string> excluded, bool includeIPv6)
     {
         var adapters = FindAdapters(excluded);
         var backup = LoadBackup() ?? new DnsBackup();
+        var added = false;
         foreach (var adapter in adapters)
         {
             if (backup.Adapters.Any(a => a.Id.Equals(adapter.Id, StringComparison.OrdinalIgnoreCase))) continue;
@@ -111,29 +122,40 @@ public sealed class SystemDns(AppPaths paths)
                 IPv4 = WithoutLoopback(ReadRegistry(IPv4Interfaces + adapter.Id, "NameServer")),
                 IPv6 = WithoutLoopback(ReadRegistry(IPv6Interfaces + adapter.Id, "NameServer")),
             });
+            added = true;
         }
-        // Save first, so a crash half-way through can still be undone.
-        AtomicFile.WriteAllText(paths.DnsStateFile, JsonSerializer.Serialize(backup, AppJson.Default.DnsBackup));
+        // Save first, so a crash half-way through can still be undone. Flushed to disk, because
+        // after a power cut this file is the only record of the original settings.
+        if (added) AtomicFile.WriteAllText(paths.DnsStateFile, JsonSerializer.Serialize(backup, AppJson.Default.DnsBackup), durable: true);
 
         var changed = new List<string>();
+        var failed = new List<(string, string)>();
         foreach (var adapter in adapters)
         {
-            var touched = SetIfDifferent(adapter.Id, ipv6: false, LoopbackIPv4);
-            if (includeIPv6)
+            try
             {
-                // IPv6 can be switched off per adapter; the IPv4 setting is what matters then.
-                try
+                var touched = SetIfDifferent(adapter.Id, ipv6: false, LoopbackIPv4);
+                if (includeIPv6)
                 {
-                    touched |= SetIfDifferent(adapter.Id, ipv6: true, LoopbackIPv6);
+                    // IPv6 can be switched off per adapter; the IPv4 setting is what matters then.
+                    try
+                    {
+                        touched |= SetIfDifferent(adapter.Id, ipv6: true, LoopbackIPv6);
+                    }
+                    catch (Win32Exception)
+                    {
+                    }
                 }
-                catch (Win32Exception)
-                {
-                }
+                if (touched) changed.Add(adapter.Name);
             }
-            if (touched) changed.Add(adapter.Name);
+            catch (Win32Exception e)
+            {
+                // One adapter (perhaps one that just went away) must not leave the others unprotected.
+                failed.Add((adapter.Name, e.Message));
+            }
         }
         if (changed.Count > 0) FlushCache();
-        return changed;
+        return new ApplyResult(changed, failed, adapters.Count);
     }
 
     /// <summary>Puts the saved settings back. Returns the names of the adapters restored.</summary>

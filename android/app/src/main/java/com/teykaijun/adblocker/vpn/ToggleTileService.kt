@@ -8,9 +8,11 @@ import android.os.Build
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import com.teykaijun.adblocker.MainActivity
+import com.teykaijun.adblocker.app
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
 /** Quick Settings tile that turns protection on and off. */
@@ -19,7 +21,9 @@ class ToggleTileService : TileService() {
 
     override fun onStartListening() {
         listening = CoroutineScope(Dispatchers.Main.immediate).launch {
-            VpnController.state.collect { render(it) }
+            // The VPN clears the pause from the settings when it ends, which updates the tile too.
+            combine(VpnController.state, app.settings.settings) { state, settings -> state to settings.isPaused() }
+                .collect { (state, paused) -> render(state, paused) }
         }
     }
 
@@ -37,7 +41,7 @@ class ToggleTileService : TileService() {
         }
     }
 
-    private fun render(state: VpnState) {
+    private fun render(state: VpnState, paused: Boolean) {
         val tile = qsTile ?: return
         tile.state = when (state) {
             is VpnState.Running, VpnState.Starting -> Tile.STATE_ACTIVE
@@ -45,7 +49,7 @@ class ToggleTileService : TileService() {
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             tile.subtitle = when (state) {
-                is VpnState.Running -> "On"
+                is VpnState.Running -> if (paused) "Paused" else "On"
                 VpnState.Starting -> "Starting…"
                 is VpnState.Failed -> "Stopped"
                 VpnState.Stopped -> "Off"

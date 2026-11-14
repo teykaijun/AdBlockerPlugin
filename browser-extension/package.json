@@ -4,6 +4,6 @@
   "description": "Test setup for the AdBlocker Companion browser extension. Not needed to use the extension.",
   "type": "module",
   "scripts": {
-    "test": "node --test test/*.test.mjs"
+    "test": "node --check background.js && node --check popup.js && node --test test/*.test.mjs"
   }
 }

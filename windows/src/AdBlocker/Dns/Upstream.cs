@@ -66,8 +66,14 @@ public sealed class UdpUpstream(IPEndPoint endpoint) : IUpstream
         await client.ConnectAsync(endpoint, cancellationToken);
         var stream = client.GetStream();
         await DnsTcp.WriteMessageAsync(stream, query, cancellationToken);
-        return await DnsTcp.ReadMessageAsync(stream, cancellationToken)
+        var answer = await DnsTcp.ReadMessageAsync(stream, cancellationToken)
             ?? throw new IOException($"{Name} closed the TCP connection without answering.");
+        // Checked like a UDP answer, so a broken server or middlebox makes the pool try the next one.
+        if (!DnsMessage.IsResponse(answer) || DnsMessage.ReadId(answer) != DnsMessage.ReadId(query))
+        {
+            throw new IOException($"{Name} sent something over TCP that is not the answer to the lookup.");
+        }
+        return answer;
     }
 }
 
@@ -170,7 +176,7 @@ internal static class BootstrapResolver
     }
 }
 
-/// <summary>Tries servers in order, remembering the last one that worked.</summary>
+/// <summary>Tries servers in order, and moves on from one that is down.</summary>
 public sealed class UpstreamPool(IReadOnlyList<IUpstream> servers, TimeSpan attemptTimeout)
 {
     private const int MaxAttempts = 3;
@@ -183,7 +189,15 @@ public sealed class UpstreamPool(IReadOnlyList<IUpstream> servers, TimeSpan atte
     {
         if (servers.Count == 0) return null;
         var start = Volatile.Read(ref _preferred) % servers.Count;
-        for (var attempt = 0; attempt < Math.Min(servers.Count, MaxAttempts); attempt++)
+        var attempts = Math.Min(servers.Count, MaxAttempts);
+        byte[]? refusal = null;
+        // Later lookups start elsewhere only when the first server didn't answer at all. A SERVFAIL
+        // or REFUSED often concerns just this name (its DNSSEC is broken, or a filtering server
+        // such as AdGuard Home refuses it), and the first server may be the router or Pi-hole that
+        // knows the local names the next one doesn't.
+        var firstFailed = false;
+        int? firstToAnswer = null;
+        for (var attempt = 0; attempt < attempts; attempt++)
         {
             var index = (start + attempt) % servers.Count;
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -191,15 +205,27 @@ public sealed class UpstreamPool(IReadOnlyList<IUpstream> servers, TimeSpan atte
             try
             {
                 var answer = await servers[index].QueryAsync(query, timeout.Token).WaitAsync(timeout.Token);
-                if (attempt > 0) Volatile.Write(ref _preferred, index);
+                firstToAnswer ??= index;
+                // A router whose internet is down answers SERVFAIL, and some servers refuse this PC:
+                // keep that answer in case no other server does better.
+                if (DnsMessage.ResponseCode(answer) is DnsMessage.RcodeServFail or DnsMessage.RcodeRefused)
+                {
+                    refusal ??= answer;
+                    continue;
+                }
+                if (firstFailed) Volatile.Write(ref _preferred, index);
                 return answer;
             }
             catch (Exception) when (!cancellationToken.IsCancellationRequested)
             {
                 // Timed out or failed: try the next server.
+                if (attempt == 0) firstFailed = true;
             }
         }
-        return null;
+        // Nothing worked. If the first server didn't answer, the next lookup starts with one that
+        // did, or else goes on after the servers tried here.
+        if (firstFailed) Volatile.Write(ref _preferred, firstToAnswer ?? (start + attempts) % servers.Count);
+        return refusal;
     }
 }
 

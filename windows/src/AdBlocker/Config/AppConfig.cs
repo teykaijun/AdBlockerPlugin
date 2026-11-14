@@ -19,6 +19,12 @@ public sealed class AppConfig
 
     public List<string> AllowedDomains { get; set; } = [];
 
+    /// <summary>Domains allowed until a time ("adblocker allow example.com --for 10m").</summary>
+    public Dictionary<string, DateTimeOffset> TemporarilyAllowed { get; set; } = [];
+
+    /// <summary>Nothing is blocked until this time ("adblocker pause"); null when not paused.</summary>
+    public DateTimeOffset? PausedUntil { get; set; }
+
     /// <summary>Where allowed lookups go: "auto", a preset name, IP addresses or https:// URLs.</summary>
     public List<string> Upstream { get; set; } = ["auto"];
 
@@ -77,7 +83,10 @@ public static class ConfigStore
         if (!File.Exists(paths.ConfigFile)) return new AppConfig();
         try
         {
-            return JsonSerializer.Deserialize(File.ReadAllText(paths.ConfigFile), AppJson.Default.AppConfig) ?? new AppConfig();
+            // Read in one go. A command or the service replacing the file meanwhile has to wait until
+            // it is closed, whatever the sharing here; AtomicFile.Replace retries for that moment.
+            using var reader = new StreamReader(new FileStream(paths.ConfigFile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete));
+            return Normalize(JsonSerializer.Deserialize(reader.ReadToEnd(), AppJson.Default.AppConfig) ?? new AppConfig());
         }
         catch (JsonException e)
         {
@@ -88,7 +97,41 @@ public static class ConfigStore
     public static void Save(AppPaths paths, AppConfig config)
     {
         paths.EnsureCreated();
-        AtomicFile.WriteAllText(paths.ConfigFile, JsonSerializer.Serialize(config, AppJson.Default.AppConfig));
+        AtomicFile.WriteAllText(paths.ConfigFile, JsonSerializer.Serialize(config, AppJson.Default.AppConfig), durable: true);
+    }
+
+    /// <summary>
+    /// Repairs what a hand edit can leave behind that valid JSON allows: null lists, null or blank
+    /// entries, community lists without an id, and the same list twice (the last one wins).
+    /// </summary>
+    internal static AppConfig Normalize(AppConfig config)
+    {
+        var defaults = new AppConfig();
+        config.Lists ??= defaults.Lists;
+        config.CommunityLists ??= defaults.CommunityLists;
+        config.BlockedDomains ??= defaults.BlockedDomains;
+        config.AllowedDomains ??= defaults.AllowedDomains;
+        config.TemporarilyAllowed ??= defaults.TemporarilyAllowed;
+        config.Upstream ??= defaults.Upstream;
+        config.ExcludedAdapters ??= defaults.ExcludedAdapters;
+
+        config.BlockedDomains.RemoveAll(string.IsNullOrWhiteSpace);
+        config.AllowedDomains.RemoveAll(string.IsNullOrWhiteSpace);
+        config.Upstream.RemoveAll(string.IsNullOrWhiteSpace);
+        config.ExcludedAdapters.RemoveAll(string.IsNullOrWhiteSpace);
+        foreach (var key in config.Lists.Keys.Where(string.IsNullOrWhiteSpace).ToList()) config.Lists.Remove(key);
+        foreach (var key in config.TemporarilyAllowed.Keys.Where(string.IsNullOrWhiteSpace).ToList()) config.TemporarilyAllowed.Remove(key);
+
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var lists = new List<CommunityListSetting>();
+        for (var i = config.CommunityLists.Count - 1; i >= 0; i--)
+        {
+            var list = config.CommunityLists[i];
+            if (list is not null && !string.IsNullOrWhiteSpace(list.Id) && seen.Add(list.Id)) lists.Add(list);
+        }
+        lists.Reverse();
+        config.CommunityLists = lists;
+        return config;
     }
 
     /// <summary>Loads, changes and saves the configuration. A running service picks the change up.</summary>

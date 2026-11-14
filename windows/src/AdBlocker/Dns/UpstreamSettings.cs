@@ -21,12 +21,16 @@ public static class UpstreamSettings
     public static readonly string[] Fallback = ["1.1.1.1", "9.9.9.9", "2606:4700:4700::1111"];
 
     /// <summary>A description of what is wrong with <paramref name="entry"/>, or null if it is valid.</summary>
-    public static string? Validate(string entry)
+    /// <param name="self">This PC's own addresses (<see cref="LocalNetwork.ThisComputer"/>), which AdBlocker would answer itself.</param>
+    public static string? Validate(string entry, IReadOnlySet<IPAddress>? self = null)
     {
         if (entry.Equals(Auto, StringComparison.OrdinalIgnoreCase) || Presets.ContainsKey(entry)) return null;
         if (TryParseAddress(entry, out var endpoint))
         {
-            return IsUsable(endpoint) ? null : $"\"{entry}\" cannot be used: that is AdBlocker itself, or not a real server address.";
+            if (!IsUsable(endpoint)) return $"\"{entry}\" cannot be used: that is AdBlocker itself, or not a real server address.";
+            return IsThisComputer(endpoint, self)
+                ? $"\"{entry}\" cannot be used: that is this PC itself, so lookups would go round in circles."
+                : null;
         }
         if (Uri.TryCreate(entry, UriKind.Absolute, out var uri))
         {
@@ -35,14 +39,18 @@ public static class UpstreamSettings
         return $"\"{entry}\" is not an IP address, an https:// URL, \"auto\" or one of: {string.Join(", ", Presets.Keys)}.";
     }
 
-    public static List<IUpstream> Create(IEnumerable<string> entries, IEnumerable<IPAddress> automatic, HttpClient doh)
+    /// <param name="self">
+    /// This PC's own addresses. They are never used: with "lan on" AdBlocker answers there itself, so a
+    /// router that hands out this PC as the DNS server would make every lookup go round in circles.
+    /// </param>
+    public static List<IUpstream> Create(IEnumerable<string> entries, IEnumerable<IPAddress> automatic, HttpClient doh, IReadOnlySet<IPAddress>? self = null)
     {
         var servers = new List<IUpstream>();
         foreach (var entry in entries)
         {
             if (entry.Equals(Auto, StringComparison.OrdinalIgnoreCase))
             {
-                servers.AddRange(automatic.Select(a => new UdpUpstream(a)));
+                servers.AddRange(automatic.Where(a => !IsThisComputer(new IPEndPoint(a, 53), self)).Select(a => new UdpUpstream(a)));
             }
             else if (Presets.TryGetValue(entry, out var urls))
             {
@@ -50,7 +58,7 @@ public static class UpstreamSettings
             }
             else if (TryParseAddress(entry, out var endpoint))
             {
-                if (IsUsable(endpoint)) servers.Add(new UdpUpstream(endpoint));
+                if (IsUsable(endpoint) && !IsThisComputer(endpoint, self)) servers.Add(new UdpUpstream(endpoint));
             }
             else if (Uri.TryCreate(entry, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps)
             {
@@ -78,6 +86,10 @@ public static class UpstreamSettings
     /// </summary>
     public static bool IsUsable(IPEndPoint endpoint) =>
         IPAddress.IsLoopback(endpoint.Address) ? endpoint.Port != 53 : IsUsable(endpoint.Address);
+
+    /// <summary>Port 53 on one of this PC's addresses; another port can be a different local resolver.</summary>
+    private static bool IsThisComputer(IPEndPoint endpoint, IReadOnlySet<IPAddress>? self) =>
+        endpoint.Port == 53 && self is not null && self.Contains(LocalNetwork.Plain(endpoint.Address));
 
     private static bool TryParseAddress(string entry, out IPEndPoint endpoint)
     {

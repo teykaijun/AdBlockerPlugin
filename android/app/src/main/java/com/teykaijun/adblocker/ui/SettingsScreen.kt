@@ -7,10 +7,12 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -63,9 +65,11 @@ fun SettingsScreen(
     ) { padding ->
         Column(Modifier.padding(padding).verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
             SectionHeader("DNS server", "Answers every lookup that is not blocked.")
-            DnsProvider.entries.forEach { provider ->
-                RadioRow(provider.title, provider.detail, selected = settings.dnsProvider == provider) {
-                    onUpdateSettings { it.copy(dnsProvider = provider) }
+            Column(Modifier.selectableGroup()) {
+                DnsProvider.entries.forEach { provider ->
+                    RadioRow(provider.title, provider.detail, selected = settings.dnsProvider == provider) {
+                        onUpdateSettings { it.copy(dnsProvider = provider) }
+                    }
                 }
             }
             if (settings.dnsProvider == DnsProvider.CUSTOM) {
@@ -74,7 +78,8 @@ fun SettingsScreen(
                     value = customDns,
                     onValueChange = { text ->
                         customDns = text
-                        if (parseIpLiteral(text) != null) onUpdateSettings { it.copy(customDns = text.trim()) }
+                        // An empty field means Cloudflare, as the hint below says, so that is saved too.
+                        if (text.isBlank() || parseIpLiteral(text) != null) onUpdateSettings { it.copy(customDns = text.trim()) }
                     },
                     label = { Text("Server IP address") },
                     singleLine = true,
@@ -149,7 +154,8 @@ fun SettingsScreen(
             )
             Paragraph(
                 "Lookups stay on your phone apart from that one DNS server. The app only goes online to download " +
-                    "community lists you turn on.",
+                    "community lists you turn on and, unless you switch off “Check for updates automatically” below, " +
+                    "to ask GitHub whether a new version is out when you open it, at most once a day.",
             )
 
             SectionHeader("Good to know")
@@ -169,16 +175,18 @@ fun SettingsScreen(
                 onInstall = { release ->
                     if (ApkInstaller.isAllowed(context)) confirmUpdate = release else allowInstalls = true
                 },
+                onConfirmInstall = { UpdateController.confirmInstall(context) },
             )
             SwitchRow(
                 title = "Check for updates automatically",
-                body = "Once a day, AdBlocker asks GitHub whether a newer version is out. Nothing about you is sent.",
+                body = "When you open AdBlocker, at most once a day, it asks GitHub whether a newer version is out. " +
+                    "Nothing about you is sent.",
                 checked = settings.autoCheckUpdates,
                 onCheckedChange = { on -> onUpdateSettings { it.copy(autoCheckUpdates = on) } },
             )
 
             SectionHeader("About")
-            ClickRow(title = "Version", body = BuildConfig.VERSION_NAME, onClick = {})
+            ClickRow(title = "Version", body = BuildConfig.VERSION_NAME, onClick = null)
             ClickRow(
                 title = "Support development ☕",
                 body = "If AdBlocker is useful to you, you can buy me a coffee.",
@@ -278,7 +286,7 @@ fun SettingsScreen(
 
 /** One row that both reports the update state and starts the next step. */
 @Composable
-private fun UpdateRow(state: UpdateState, onCheck: () -> Unit, onInstall: (Release) -> Unit) {
+private fun UpdateRow(state: UpdateState, onCheck: () -> Unit, onInstall: (Release) -> Unit, onConfirmInstall: () -> Unit) {
     val (title, body, action) = when (state) {
         UpdateState.Idle -> Triple("Check for updates", "You have version ${BuildConfig.VERSION_NAME}.", onCheck)
         UpdateState.Checking -> Triple("Looking for a new version…", null, null)
@@ -289,10 +297,19 @@ private fun UpdateRow(state: UpdateState, onCheck: () -> Unit, onInstall: (Relea
             { onInstall(state.release) },
         )
         is UpdateState.Downloading -> Triple("Downloading… ${state.percent}%", null, null)
-        UpdateState.Installing -> Triple("Ready to install", "Confirm the install when Android asks.", null)
-        is UpdateState.Failed -> Triple("Could not update", "${state.message} Tap to try again.", onCheck)
+        // Until Android asks, there is no install screen to open.
+        UpdateState.Installing -> Triple("Preparing the install…", null, null)
+        UpdateState.Confirming -> Triple("Ready to install", "Tap if Android's install screen didn't open.", onConfirmInstall)
+        is UpdateState.Failed -> if (state.canRetry) {
+            Triple("Could not update", "${state.message.trimEnd('.')}. Tap to try again.", onCheck)
+        } else {
+            Triple("Could not update", state.message, null)
+        }
     }
-    ClickRow(title = title, body = body, onClick = action ?: {})
+    ClickRow(title = title, body = body, onClick = action)
+    if (state is UpdateState.Downloading) {
+        LinearProgressIndicator(progress = { state.percent / 100f }, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
+    }
 }
 
 @Composable

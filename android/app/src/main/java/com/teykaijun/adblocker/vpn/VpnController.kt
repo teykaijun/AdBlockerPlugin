@@ -3,6 +3,7 @@ package com.teykaijun.adblocker.vpn
 import android.content.Context
 import androidx.core.content.ContextCompat
 import com.teykaijun.adblocker.dns.Rules
+import com.teykaijun.adblocker.dns.UserRules
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -10,7 +11,12 @@ import kotlinx.coroutines.flow.asStateFlow
 sealed interface VpnState {
     data object Stopped : VpnState
     data object Starting : VpnState
-    data class Running(val since: Long) : VpnState
+
+    /**
+     * @property alwaysOn Android keeps AdBlocker running (Always-on VPN).
+     * @property lockdown "Block connections without VPN" is on, which cuts off everything but DNS.
+     */
+    data class Running(val since: Long, val alwaysOn: Boolean = false, val lockdown: Boolean = false) : VpnState
     data class Failed(val message: String) : VpnState
 }
 
@@ -22,10 +28,21 @@ object VpnController {
     val isActive: Boolean
         get() = state.value.let { it is VpnState.Running || it is VpnState.Starting }
 
-    /** The rules the running VPN answers with, or null while it isn't running. The tab closer reads them. */
+    /** The filter lists the running VPN answers with, or null while it isn't running. The tab closer reads them. */
     @Volatile
     var rules: Rules? = null
         internal set
+
+    /** The user's own rules, allowances and pause, which the running VPN applies before [rules]. */
+    @Volatile
+    var userRules: UserRules = UserRules.NONE
+        internal set
+
+    /** Whether the running VPN blocks `host` right now; false while it isn't running or is paused. */
+    fun blocks(host: String): Boolean {
+        val current = rules ?: return false
+        return userRules.isBlocked(host, current.matcher, System.currentTimeMillis())
+    }
 
     internal fun setState(state: VpnState) {
         mutableState.value = state

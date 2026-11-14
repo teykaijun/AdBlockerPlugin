@@ -132,12 +132,13 @@ fun RadioRow(title: String, body: String, selected: Boolean, onSelect: () -> Uni
     )
 }
 
+/** A row that does something when tapped; with a null `onClick` it is plain text, also for TalkBack. */
 @Composable
-fun ClickRow(title: String, body: String?, onClick: () -> Unit) {
+fun ClickRow(title: String, body: String?, onClick: (() -> Unit)?) {
     ListItem(
         headlineContent = { Text(title) },
         supportingContent = body?.let { { Text(it) } },
-        modifier = Modifier.clickable(onClick = onClick),
+        modifier = if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier,
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
     )
 }
@@ -182,6 +183,9 @@ fun formatCount(value: Number): String = NumberFormat.getIntegerInstance().forma
 fun formatDate(millis: Long): String = DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(millis))
 
 fun formatTime(millis: Long): String = DateFormat.getTimeInstance(DateFormat.MEDIUM).format(Date(millis))
+
+/** Hours and minutes, like 14:32. */
+fun formatClock(millis: Long): String = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(millis))
 
 fun relativeTime(millis: Long): String =
     DateUtils.getRelativeTimeSpanString(millis, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS).toString()

@@ -20,7 +20,8 @@ describe('isNewerVersion', () => {
 });
 
 describe('API', () => {
+  // consistency.test.mjs checks the port against AdBlocker for Windows.
   it('points at AdBlocker on this PC only', () => {
-    assert.equal(API, 'http://127.0.0.1:45353/v1');
+    assert.match(API, /^http:\/\/127\.0\.0\.1:\d+\/v1$/);
   });
 });

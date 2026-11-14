@@ -3,9 +3,16 @@ package com.teykaijun.adblocker.update
 import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection
+import java.net.SocketException
+import java.net.SocketTimeoutException
 import java.net.URL
+import java.net.UnknownHostException
 import java.security.MessageDigest
+import javax.net.ssl.SSLException
 import org.json.JSONObject
+
+/** GitHub answered with an HTTP error. */
+class HttpStatusException(val code: Int) : IOException("GitHub answered HTTP $code.")
 
 /** A release on the project's GitHub page. */
 data class Release(
@@ -139,6 +146,15 @@ object Updates {
         return apk
     }
 
+    /** A sentence for the Settings screen about why checking or downloading failed. */
+    fun describeFailure(e: Exception, fallback: String): String = when {
+        e is UnknownHostException || e is SocketException || e is SocketTimeoutException || e is SSLException ->
+            "Could not reach GitHub. Check your internet connection."
+        // GitHub allows 60 requests an hour without an account, often shared by a whole mobile network.
+        e is HttpStatusException && (e.code == 403 || e.code == 429) -> "GitHub is limiting requests for a while."
+        else -> e.message ?: fallback
+    }
+
     private fun parts(version: String) =
         version.trim().removePrefix("v").split('.', '-', '+').map { it.toIntOrNull() ?: 0 }
 
@@ -157,7 +173,7 @@ object Updates {
             connection.readTimeout = TIMEOUT_MS
             connection.setRequestProperty("Accept", "application/vnd.github+json")
             connection.setRequestProperty("User-Agent", "AdBlocker-Android")
-            if (connection.responseCode !in 200..299) throw IOException("GitHub answered HTTP ${connection.responseCode}")
+            if (connection.responseCode !in 200..299) throw HttpStatusException(connection.responseCode)
             use(connection)
         } finally {
             connection.disconnect()

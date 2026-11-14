@@ -98,11 +98,12 @@ describe('redirects in an existing tab', () => {
     assert.deepEqual(calls.reports, ['redirect ads.example.com']);
   });
 
-  it('does nothing when there is no page to go back to', async () => {
+  it('leaves the error page when there is no page to go back to, and says so', async () => {
     const { guard, calls } = setup({ canGoBack: false });
     await guard.onNavigationError({ tabId: 3, frameId: 0, url: 'https://ads.example.com/', error: DNS_ERROR });
     assert.deepEqual(calls.back, []);
-    assert.deepEqual(calls.reports, []);
+    assert.deepEqual(calls.closed, []);
+    assert.deepEqual(calls.reports, ['shown ads.example.com']);
   });
 
   it('only reacts to lookup failures of blocked hosts in the main frame', async () => {

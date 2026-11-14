@@ -68,20 +68,37 @@ public static partial class BrowserCheck
         return null;
     }
 
-    private static bool FirefoxUsesOwnDns()
+    private static bool FirefoxUsesOwnDns() =>
+        FirefoxUsesOwnDns(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), @"Mozilla\Firefox\Profiles"));
+
+    /// <param name="profiles">The folder holding one folder per Firefox profile.</param>
+    internal static bool FirefoxUsesOwnDns(string profiles)
     {
-        var profiles = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), @"Mozilla\Firefox\Profiles");
         if (!Directory.Exists(profiles)) return false;
-        foreach (var prefs in Directory.EnumerateFiles(profiles, "prefs.js", SearchOption.AllDirectories))
+        string[] folders;
+        try
+        {
+            // prefs.js sits at the top of each profile. The folders below it can hold thousands
+            // of files (storage, caches), so they are not searched.
+            folders = Directory.GetDirectories(profiles);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+        foreach (var profile in folders)
         {
             try
             {
+                var prefs = Path.Combine(profile, "prefs.js");
+                if (!File.Exists(prefs)) continue;
                 // Mode 2 (with fallback) and 3 (only) use Firefox's own resolver. A user-set mode
                 // also overrides the use-application-dns.net signal AdBlocker sends.
                 if (TrrMode().Match(File.ReadAllText(prefs)) is { Success: true } match && match.Groups[1].Value is "2" or "3") return true;
             }
-            catch (IOException)
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
+                // A profile that can't be read is left out, rather than ending "status" or "install".
             }
         }
         return false;

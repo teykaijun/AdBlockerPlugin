@@ -115,6 +115,19 @@ public class LocalApiTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Says_until_when_blocking_is_paused()
+    {
+        // Machine-readable whatever the PC's regional format: UTC, ISO 8601, ':' between the parts.
+        var until = new DateTimeOffset(2026, 11, 14, 14, 5, 0, TimeSpan.FromHours(2));
+        await using var paused = LocalApi.TryStart(0, _ => false, _ => false, new SilentLog(), () => until)!;
+        var (status, body) = paused.Handle($"GET /v1/status HTTP/1.1\r\nHost: 127.0.0.1:{paused.Port}");
+        Assert.Equal(200, status);
+        Assert.EndsWith(""","pausedUntil":"2026-11-14T12:05:00Z"}""", body);
+
+        Assert.DoesNotContain("pausedUntil", _api.Handle($"GET /v1/status HTTP/1.1\r\nHost: 127.0.0.1:{Port}").Body);
+    }
+
+    [Fact]
     public void Reports_a_taken_port()
     {
         var log = new SilentLog();

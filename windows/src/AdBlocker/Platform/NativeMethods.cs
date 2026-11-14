@@ -1,5 +1,9 @@
 using System.Runtime.InteropServices;
 
+// Windows DLLs come from System32 only, never from the folder adblocker.exe was started from
+// (Downloads, say), where another program could have put a DLL of the same name.
+[assembly: DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+
 namespace AdBlocker.Platform;
 
 internal static class NativeMethods

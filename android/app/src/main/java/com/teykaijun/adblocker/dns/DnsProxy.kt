@@ -28,7 +28,11 @@ class DnsProxy(
     private val protectSocket: (DatagramSocket) -> Boolean,
     private val onQuery: (domain: String, blocked: Boolean) -> Unit,
 ) {
+    /** The filter lists. */
     @Volatile var matcher: DomainMatcher = DomainMatcher.EMPTY
+
+    /** The user's own rules, allowances and pause, which win over [matcher]. */
+    @Volatile var userRules: UserRules = UserRules.NONE
 
     @Volatile var upstreamServers: List<InetAddress> = emptyList()
 
@@ -42,7 +46,7 @@ class DnsProxy(
     private val writeQueue = ArrayDeque<ByteArray>()
     private val readBuffer = ByteArray(MAX_PACKET)
     private val answerBuffer = ByteArray(MAX_PACKET)
-    private var serverIndex = 0
+    private val upstream = UpstreamChooser<InetAddress>()
 
     private class PendingQuery(
         val socket: DatagramSocket,
@@ -119,7 +123,7 @@ class DnsProxy(
         val request = Packets.parseIpv4Udp(readBuffer, length) ?: return
         if (request.destinationPort != DNS_PORT) return
         val question = DnsMessage.parseQuery(request.payload) ?: return
-        val blocked = matcher.isBlocked(question.name)
+        val blocked = userRules.isBlocked(question.name, matcher, System.currentTimeMillis())
         onQuery(question.name, blocked)
         if (blocked) {
             reply(request, DnsMessage.blockedResponse(request.payload, question))
@@ -130,14 +134,21 @@ class DnsProxy(
 
     private fun forward(request: Packets.Datagram) {
         val servers = upstreamServers
-        if (servers.isEmpty()) return
-        val server = servers[serverIndex.mod(servers.size)]
+        // When a send fails, move on and try the next server once.
+        repeat(2) {
+            val server = upstream.pick(servers) ?: return
+            if (send(request, server)) return
+            upstream.failed(server, servers)
+        }
+    }
 
+    /** Relays `request` to `server`; [run] waits for the answer. False if it could not be sent. */
+    private fun send(request: Packets.Datagram, server: InetAddress): Boolean {
         val socket = try {
             DatagramSocket()
         } catch (e: IOException) {
             Log.w(TAG, "Cannot open an upstream socket", e)
-            return
+            return false
         }
         try {
             protectSocket(socket)
@@ -151,10 +162,10 @@ class DnsProxy(
             pending.addLast(PendingQuery(socket, descriptor, request, server, now() + QUERY_TIMEOUT_MS))
         } catch (e: IOException) {
             socket.close()
-            serverIndex++
-            return
+            return false
         }
         while (pending.size > MAX_PENDING) pending.removeFirst().close()
+        return true
     }
 
     private fun relayAnswer(query: PendingQuery) {
@@ -175,8 +186,9 @@ class DnsProxy(
     private fun expireQueries() {
         val now = now()
         while (pending.isNotEmpty() && pending.first().deadline <= now) {
-            pending.removeFirst().close()
-            serverIndex++ // try the next upstream server from now on
+            val query = pending.removeFirst()
+            query.close()
+            upstream.failed(query.server, upstreamServers) // try the next server from now on
         }
     }
 
@@ -230,7 +242,9 @@ class DnsProxy(
         const val MAX_PENDING = 512
         const val MAX_QUEUED_WRITES = 1_024
         const val MAX_READS_PER_WAKEUP = 64
-        const val QUERY_TIMEOUT_MS = 10_000L
+
+        /** Below Android's own retry after about 5 seconds, so that retry goes to the next server. */
+        const val QUERY_TIMEOUT_MS = 4_000L
 
         val POLLIN = OsConstants.POLLIN
         val POLLOUT = OsConstants.POLLOUT

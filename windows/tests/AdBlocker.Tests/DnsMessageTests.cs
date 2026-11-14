@@ -1,4 +1,5 @@
 using System.Net;
+using AdBlocker.Core;
 using AdBlocker.Dns;
 
 namespace AdBlocker.Tests;
@@ -109,6 +110,23 @@ public class DnsMessageTests
         var answer = TestDns.Answer(query, "192.0.2.1", "198.51.100.2");
         Assert.Equal(new[] { IPAddress.Parse("192.0.2.1"), IPAddress.Parse("198.51.100.2") }, DnsMessage.ReadAddresses(answer));
         Assert.Empty(DnsMessage.ReadAddresses(answer[..20]));
+    }
+
+    [Fact]
+    public void Shows_names_without_anything_that_could_forge_log_lines_or_reach_a_terminal()
+    {
+        var query = DnsMessage.BuildQuery(1, "evil\nline\u001b[31m.Example", DnsMessage.TypeA);
+        Assert.True(DnsMessage.TryParseQuery(query, out var question));
+        Assert.Equal("evil\nline\u001b[31m.example", question.Name); // matching sees the real name
+        Assert.Equal(@"evil\010line\027[31m.example", DnsMessage.Printable(question.Name));
+        Assert.Equal(@"a\032b\092c\127\195.example", DnsMessage.Printable("a b\\c\u007f\u00c3.example"));
+        const string plain = "ads.example.com";
+        Assert.Same(plain, DnsMessage.Printable(plain));
+
+        var line = new QueryEvent(DateTimeOffset.Now, question.Name, DnsMessage.TypeA, Blocked: true).Format();
+        Assert.DoesNotContain('\n', line);
+        Assert.DoesNotContain('\u001b', line);
+        Assert.EndsWith(@"BLOCKED  A      evil\010line\027[31m.example", line);
     }
 
     [Theory]

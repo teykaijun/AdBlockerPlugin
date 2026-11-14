@@ -1,5 +1,10 @@
 package com.teykaijun.adblocker.update
 
+import java.io.IOException
+import java.net.ConnectException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
+import javax.net.ssl.SSLHandshakeException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -52,6 +57,22 @@ class UpdatesTest {
         assertFalse(Updates.isNewer("1.4.0", "1.4.0"))
         assertFalse(Updates.isNewer("1.3.9", "1.4.0"))
         assertFalse(Updates.isNewer("1.4.0", "1.4.1"))
+    }
+
+    @Test
+    fun `explains failures in plain words`() {
+        val offline = "Could not reach GitHub. Check your internet connection."
+        assertEquals(offline, Updates.describeFailure(UnknownHostException("Unable to resolve host \"api.github.com\""), "x"))
+        assertEquals(offline, Updates.describeFailure(ConnectException("failed to connect to /140.82.121.6 (port 443)"), "x"))
+        assertEquals(offline, Updates.describeFailure(SocketTimeoutException("timeout"), "x"))
+        assertEquals(offline, Updates.describeFailure(SSLHandshakeException("Chain validation failed"), "x"))
+        val limited = "GitHub is limiting requests for a while."
+        assertEquals(limited, Updates.describeFailure(HttpStatusException(403), "x"))
+        assertEquals(limited, Updates.describeFailure(HttpStatusException(429), "x"))
+        assertEquals("GitHub answered HTTP 404.", Updates.describeFailure(HttpStatusException(404), "x"))
+        val mismatch = IOException("The download does not match the checksum published with the release.")
+        assertEquals(mismatch.message, Updates.describeFailure(mismatch, "x"))
+        assertEquals("The download failed.", Updates.describeFailure(IOException(), "The download failed."))
     }
 
     @Test

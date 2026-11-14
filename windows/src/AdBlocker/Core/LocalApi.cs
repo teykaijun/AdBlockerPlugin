@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -11,7 +12,7 @@ namespace AdBlocker.Core;
 /// </summary>
 /// <remarks>
 /// <list type="bullet">
-///   <item><c>GET /v1/status</c> → <c>{"app":"AdBlocker","version":"…"}</c></item>
+///   <item><c>GET /v1/status</c> → <c>{"app":"AdBlocker","version":"…"}</c>, plus <c>"pausedUntil"</c> while paused</item>
 ///   <item><c>GET /v1/check?host=ads.example.com</c> → <c>{"host":"ads.example.com","blocked":true,"scam":false}</c></item>
 /// </list>
 /// It only listens on loopback, only answers requests addressed to 127.0.0.1/localhost
@@ -29,15 +30,17 @@ public sealed class LocalApi : IAsyncDisposable
     private readonly TcpListener _listener;
     private readonly Func<string, bool> _isBlocked;
     private readonly Func<string, bool> _isScam;
+    private readonly Func<DateTimeOffset?> _pausedUntil;
     private readonly CancellationTokenSource _stopping = new();
     private readonly SemaphoreSlim _connections = new(32);
     private readonly Task _loop;
 
-    private LocalApi(TcpListener listener, Func<string, bool> isBlocked, Func<string, bool> isScam)
+    private LocalApi(TcpListener listener, Func<string, bool> isBlocked, Func<string, bool> isScam, Func<DateTimeOffset?> pausedUntil)
     {
         _listener = listener;
         _isBlocked = isBlocked;
         _isScam = isScam;
+        _pausedUntil = pausedUntil;
         Port = ((IPEndPoint)listener.LocalEndpoint).Port;
         _loop = Task.Run(AcceptAsync);
     }
@@ -45,7 +48,12 @@ public sealed class LocalApi : IAsyncDisposable
     public int Port { get; }
 
     /// <summary>Starts listening, or returns null (after logging why) if the port is not available.</summary>
-    public static LocalApi? TryStart(int port, Func<string, bool> isBlocked, Func<string, bool> isScam, ILog log)
+    public static LocalApi? TryStart(
+        int port,
+        Func<string, bool> isBlocked,
+        Func<string, bool> isScam,
+        ILog log,
+        Func<DateTimeOffset?>? pausedUntil = null)
     {
         var listener = new TcpListener(IPAddress.Loopback, port) { ExclusiveAddressUse = true };
         try
@@ -58,7 +66,7 @@ public sealed class LocalApi : IAsyncDisposable
             log.Warn($"The browser companion endpoint could not start on port {port}: {e.Message}");
             return null;
         }
-        return new LocalApi(listener, isBlocked, isScam);
+        return new LocalApi(listener, isBlocked, isScam, pausedUntil ?? (() => null));
     }
 
     /// <summary>Whether AdBlocker's endpoint, in this or another process, answers on <paramref name="port"/>.</summary>
@@ -161,7 +169,10 @@ public sealed class LocalApi : IAsyncDisposable
         switch (path)
         {
             case "/v1/status":
-                return (200, $$"""{"app":"AdBlocker","version":"{{AppInfo.Version}}"}""");
+                var paused = _pausedUntil() is { } until
+                    ? $",\"pausedUntil\":\"{until.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture)}\""
+                    : "";
+                return (200, $$"""{"app":"AdBlocker","version":"{{AppInfo.Version}}"{{paused}}}""");
             case "/v1/check":
                 var requested = QueryValue(query, "host");
                 var name = requested is null ? null : RuleParser.NormalizeDomain(requested);

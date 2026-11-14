@@ -103,12 +103,15 @@ internal sealed class FakeUpstream : IAsyncDisposable
     private readonly TcpListener _tcp;
     private readonly CancellationTokenSource _stopping = new();
     private readonly Task[] _loops;
+    private readonly Func<byte[], byte[]>? _tcpAnswer;
     private int _udpQueries;
     private int _tcpQueries;
 
     /// <param name="truncateUdp">Mark every UDP answer as truncated, so clients must retry over TCP.</param>
-    public FakeUpstream(bool truncateUdp = false)
+    /// <param name="tcpAnswer">What to send back over TCP instead of a proper answer.</param>
+    public FakeUpstream(bool truncateUdp = false, Func<byte[], byte[]>? tcpAnswer = null)
     {
+        _tcpAnswer = tcpAnswer;
         _udp.IOControl(SioUdpConnReset, [0, 0, 0, 0], null);
         _udp.Bind(new IPEndPoint(IPAddress.Loopback, 0));
         Endpoint = (IPEndPoint)_udp.LocalEndPoint!;
@@ -157,7 +160,7 @@ internal sealed class FakeUpstream : IAsyncDisposable
                 if (await DnsTcp.ReadMessageAsync(stream, _stopping.Token) is { } query)
                 {
                     Interlocked.Increment(ref _tcpQueries);
-                    await DnsTcp.WriteMessageAsync(stream, TestDns.Answer(query, "192.0.2.10"), _stopping.Token);
+                    await DnsTcp.WriteMessageAsync(stream, _tcpAnswer?.Invoke(query) ?? TestDns.Answer(query, "192.0.2.10"), _stopping.Token);
                 }
             }
             catch (Exception e) when (e is SocketException or IOException)

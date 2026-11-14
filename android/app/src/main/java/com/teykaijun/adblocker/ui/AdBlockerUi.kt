@@ -16,6 +16,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.painter.Painter
@@ -26,6 +27,7 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.teykaijun.adblocker.R
 import com.teykaijun.adblocker.app
+import com.teykaijun.adblocker.data.PAUSE_MINUTES
 import com.teykaijun.adblocker.tabs.TabCloser
 import com.teykaijun.adblocker.update.UpdateController
 import com.teykaijun.adblocker.update.UpdateState
@@ -74,6 +76,9 @@ fun AdBlockerUi(onStartProtection: () -> Unit, onStopProtection: () -> Unit) {
         onPauseOrDispose {}
     }
 
+    // Keeps each tab's searches, filters and scroll positions while another tab is shown.
+    val screens = rememberSaveableStateHolder()
+
     Scaffold(
         bottomBar = {
             NavigationBar {
@@ -90,48 +95,55 @@ fun AdBlockerUi(onStartProtection: () -> Unit, onStopProtection: () -> Unit) {
     ) { padding ->
         // Each screen's top bar handles the status bar; only keep room for the bottom bar here.
         Box(Modifier.fillMaxSize().padding(bottom = padding.calculateBottomPadding())) {
-            when (tab) {
-                Tab.Home -> HomeScreen(
-                    state = vpnState,
-                    totals = totals,
-                    privateDnsServer = network.privateDnsServer,
-                    newVersion = (updateState as? UpdateState.Available)?.release?.version,
-                    onToggle = { if (VpnController.isActive) onStopProtection() else onStartProtection() },
-                    onOpenActivity = { tab = Tab.Activity },
-                    onOpenSettings = { tab = Tab.Settings },
-                )
-                Tab.Activity -> ActivityScreen(
-                    events = recent,
-                    settings = settings,
-                    running = vpnState is VpnState.Running,
-                    onRule = { domain, allow ->
-                        app.settings.update { if (allow == null) it.withoutDomainRule(domain) else it.withDomainRule(domain, allow) }
-                    },
-                    onClear = app.stats::clearRecent,
-                )
-                Tab.Filters -> FiltersScreen(
-                    builtIn = remember { app.filters.builtIn },
-                    settings = settings,
-                    status = listStatus,
-                    onUpdateSettings = app.settings::update,
-                    onRefreshList = app.filters::refresh,
-                    onDeleteList = app.filters::delete,
-                )
-                Tab.Apps -> AppsScreen(
-                    bypassApps = settings.bypassApps,
-                    onToggle = { pkg, bypass ->
-                        app.settings.update { it.copy(bypassApps = if (bypass) it.bypassApps + pkg else it.bypassApps - pkg) }
-                    },
-                )
-                Tab.Settings -> SettingsScreen(
-                    settings = settings,
-                    totals = totals,
-                    tabCloserOn = tabCloserRunning || tabCloserEnabled,
-                    tabCloserStats = tabCloserStats,
-                    updateState = updateState,
-                    onUpdateSettings = app.settings::update,
-                    onResetStats = app.stats::reset,
-                )
+            screens.SaveableStateProvider(tab.name) {
+                when (tab) {
+                    Tab.Home -> HomeScreen(
+                        state = vpnState,
+                        pausedUntil = settings.pausedUntil?.takeIf { it > System.currentTimeMillis() },
+                        totals = totals,
+                        privateDnsServer = network.privateDnsServer,
+                        newVersion = (updateState as? UpdateState.Available)?.release?.version,
+                        onToggle = { if (VpnController.isActive) onStopProtection() else onStartProtection() },
+                        onPause = { app.settings.update { it.pausedFor(PAUSE_MINUTES) } },
+                        onResume = { app.settings.update { it.copy(pausedUntil = null) } },
+                        onOpenActivity = { tab = Tab.Activity },
+                        onOpenSettings = { tab = Tab.Settings },
+                    )
+                    Tab.Activity -> ActivityScreen(
+                        events = recent,
+                        settings = settings,
+                        running = vpnState is VpnState.Running,
+                        onRule = { domain, allow ->
+                            app.settings.update { if (allow == null) it.withoutDomainRule(domain) else it.withDomainRule(domain, allow) }
+                        },
+                        onAllowForAWhile = { domain -> app.settings.update { it.withTemporaryAllow(domain, ALLOW_FOR_MINUTES) } },
+                        onBlockAgain = { domain -> app.settings.update { it.withoutAllowancesFor(domain) } },
+                        onClear = app.stats::clearRecent,
+                    )
+                    Tab.Filters -> FiltersScreen(
+                        builtIn = remember { app.filters.builtIn },
+                        settings = settings,
+                        status = listStatus,
+                        onUpdateSettings = app.settings::update,
+                        onRefreshList = app.filters::refresh,
+                        onDeleteList = app.filters::delete,
+                    )
+                    Tab.Apps -> AppsScreen(
+                        bypassApps = settings.bypassApps,
+                        onToggle = { pkg, bypass ->
+                            app.settings.update { it.copy(bypassApps = if (bypass) it.bypassApps + pkg else it.bypassApps - pkg) }
+                        },
+                    )
+                    Tab.Settings -> SettingsScreen(
+                        settings = settings,
+                        totals = totals,
+                        tabCloserOn = tabCloserRunning || tabCloserEnabled,
+                        tabCloserStats = tabCloserStats,
+                        updateState = updateState,
+                        onUpdateSettings = app.settings::update,
+                        onResetStats = app.stats::reset,
+                    )
+                }
             }
         }
     }

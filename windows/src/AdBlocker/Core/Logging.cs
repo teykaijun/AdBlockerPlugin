@@ -35,9 +35,10 @@ public sealed class FileLog(string path) : ILog
                 if (File.Exists(path) && new FileInfo(path).Length > MaxBytes) File.Move(path, path + ".1", overwrite: true);
                 File.AppendAllText(path, $"{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss} {level} {message}{Environment.NewLine}");
             }
-            catch (IOException)
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
-                // Logging must never take the blocker down.
+                // Logging must never take the blocker down. Replacing a file someone has open
+                // (a viewer on service.log.1) is "access denied", not an IOException.
             }
         }
     }
@@ -48,7 +49,10 @@ public readonly record struct QueryEvent(DateTimeOffset Time, string Name, ushor
     /// <summary>BLOCKED, SCAM (blocked and on a scam list) or allowed.</summary>
     public string Status => Scam ? "SCAM" : Blocked ? "BLOCKED" : "allowed";
 
-    public string Format() => $"{Time:yyyy-MM-dd HH:mm:ss}  {Status,-7}  {DnsMessage.TypeName(Type),-5}  {Name}";
+    /// <summary>The name with anything unprintable escaped (see <see cref="DnsMessage.Printable"/>).</summary>
+    public string DisplayName => DnsMessage.Printable(Name);
+
+    public string Format() => $"{Time:yyyy-MM-dd HH:mm:ss}  {Status,-7}  {DnsMessage.TypeName(Type),-5}  {DisplayName}";
 }
 
 /// <summary>
@@ -89,7 +93,7 @@ public sealed class QueryLog : IAsyncDisposable
             lines.Clear();
             while (_pending.Reader.TryRead(out var item))
             {
-                if (item.ToEcho) _echo?.Invoke(item.Event);
+                if (item.ToEcho) Echo(item.Event);
                 if (item.ToFile) lines.AppendLine(item.Event.Format());
             }
             if (lines.Length == 0) continue;
@@ -98,9 +102,22 @@ public sealed class QueryLog : IAsyncDisposable
                 if (File.Exists(_path) && new FileInfo(_path).Length > MaxBytes) File.Move(_path, _path + ".1", overwrite: true);
                 await File.AppendAllTextAsync(_path, lines.ToString());
             }
-            catch (IOException)
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
+                // Someone has the old log open, or the disk is full: these lines are lost, not the log.
             }
+        }
+    }
+
+    private void Echo(QueryEvent query)
+    {
+        try
+        {
+            _echo?.Invoke(query);
+        }
+        catch (IOException)
+        {
+            // The console went away.
         }
     }
 

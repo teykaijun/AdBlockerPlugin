@@ -13,8 +13,12 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.teykaijun.adblocker.MainActivity
 import com.teykaijun.adblocker.R
-import com.teykaijun.adblocker.data.Totals
+import com.teykaijun.adblocker.data.PAUSE_MINUTES
+import com.teykaijun.adblocker.ui.formatClock
 import java.text.NumberFormat
+
+/** What the status notification shows: today's count, or until when blocking is paused. */
+data class ProtectionStatus(val blockedToday: Long, val pausedUntil: Long? = null)
 
 object Notifications {
     const val PROTECTION_ID = 1
@@ -51,17 +55,15 @@ object Notifications {
     }
 
     /** The ongoing notification shown while the VPN runs. */
-    fun protection(context: Context, totals: Totals): Notification {
-        val stop = PendingIntent.getService(
+    fun protection(context: Context, status: ProtectionStatus): Notification {
+        val turnOff = PendingIntent.getService(
             context,
             1,
             AdBlockVpnService.intent(context, AdBlockVpnService.ACTION_STOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        return NotificationCompat.Builder(context, CHANNEL_STATUS)
+        val builder = NotificationCompat.Builder(context, CHANNEL_STATUS)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle("Blocking ads and trackers")
-            .setContentText(blockedText(totals.blockedToday))
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setSilent(true)
@@ -69,11 +71,20 @@ object Notifications {
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .setContentIntent(openAppIntent(context))
-            .addAction(0, "Pause", stop)
-            .build()
+        val pausedUntil = status.pausedUntil
+        if (pausedUntil != null) {
+            builder.setContentTitle("Paused until ${formatClock(pausedUntil)}")
+                .setContentText("Nothing is blocked until then.")
+                .addAction(0, "Resume", PauseReceiver.pendingIntent(context, PauseReceiver.ACTION_RESUME))
+        } else {
+            builder.setContentTitle("Blocking ads and trackers")
+                .setContentText(blockedText(status.blockedToday))
+                .addAction(0, "Pause $PAUSE_MINUTES min", PauseReceiver.pendingIntent(context, PauseReceiver.ACTION_PAUSE))
+        }
+        return builder.addAction(0, "Turn off", turnOff).build()
     }
 
-    fun updateProtection(context: Context, totals: Totals) = notify(context, PROTECTION_ID, protection(context, totals))
+    fun updateProtection(context: Context, status: ProtectionStatus) = notify(context, PROTECTION_ID, protection(context, status))
 
     fun showProblem(context: Context, message: String) {
         val notification = NotificationCompat.Builder(context, CHANNEL_PROBLEMS)

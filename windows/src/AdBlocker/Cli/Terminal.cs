@@ -1,4 +1,5 @@
 using AdBlocker.Core;
+using AdBlocker.Dns;
 
 namespace AdBlocker.Cli;
 
@@ -30,7 +31,25 @@ internal static class Terminal
     /// <summary>One line per lookup while <c>adblocker run</c> is active.</summary>
     public static void Query(QueryEvent query) =>
         Write(query.Scam ? ConsoleColor.Yellow : query.Blocked ? ConsoleColor.Red : ConsoleColor.DarkGray,
-            $"{query.Time:HH:mm:ss}  {(query.Scam ? "SCAM   " : query.Blocked ? "blocked" : "allowed")}  {query.Name}");
+            $"{query.Time:HH:mm:ss}  {(query.Scam ? "SCAM   " : query.Blocked ? "blocked" : "allowed")}  {query.DisplayName}");
+
+    /// <summary>
+    /// <paramref name="line"/> (of queries.log) safe to print. Names are written escaped since 1.6.0
+    /// (see <see cref="DnsMessage.Printable"/>), but an older log can still hold control characters
+    /// from a crafted lookup, such as escape codes for the terminal. Those get the same \DDD form;
+    /// spaces and the escapes already there stay as they are.
+    /// </summary>
+    public static string PrintableLine(string line)
+    {
+        if (!line.Any(char.IsControl)) return line;
+        var text = new System.Text.StringBuilder(line.Length + 8);
+        foreach (var c in line)
+        {
+            if (char.IsControl(c)) text.Append(DnsMessage.Printable(c.ToString()));
+            else text.Append(c);
+        }
+        return text.ToString();
+    }
 
     /// <summary>Two-column "label  value" lines.</summary>
     public static void Pairs(params (string Label, string Value)[] pairs)
@@ -107,6 +126,8 @@ internal sealed class Arguments
     public IReadOnlyList<string> Positional => _positional;
 
     public bool Flag(params string[] names) => names.Any(_options.ContainsKey);
+
+    public string? Value(string name) => _options.TryGetValue(name, out var text) ? text : null;
 
     public int Int(string name, int fallback, int min, int max)
     {

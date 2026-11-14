@@ -29,7 +29,9 @@ public static class Firewall
 
     private static int Netsh(params string[] arguments)
     {
-        var info = new ProcessStartInfo("netsh")
+        // By its full path: a bare name is looked for next to adblocker.exe and in the current
+        // folder first (Downloads, say), where another program could have put a netsh.exe of its own.
+        var info = new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "netsh.exe"))
         {
             RedirectStandardOutput = true,
             RedirectStandardError = true,

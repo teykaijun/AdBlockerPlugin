@@ -18,6 +18,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -47,23 +48,33 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.teykaijun.adblocker.BuildConfig
 import com.teykaijun.adblocker.R
+import com.teykaijun.adblocker.data.PAUSE_MINUTES
 import com.teykaijun.adblocker.data.Totals
 import com.teykaijun.adblocker.ui.theme.ShieldBottom
 import com.teykaijun.adblocker.ui.theme.ShieldTop
 import com.teykaijun.adblocker.vpn.VpnState
 
+/**
+ * @param pausedUntil when the current pause ends, or null if blocking isn't paused.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     state: VpnState,
+    pausedUntil: Long?,
     totals: Totals,
     privateDnsServer: String?,
     newVersion: String?,
     onToggle: () -> Unit,
+    onPause: () -> Unit,
+    onResume: () -> Unit,
     onOpenActivity: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
     val context = LocalContext.current
+    val running = state as? VpnState.Running
+    // A pause only means something while protection is on.
+    val paused = if (running != null) pausedUntil else null
     Scaffold(
         topBar = { TopAppBar(title = { Text("AdBlocker") }, actions = { AppMenu() }) },
         contentWindowInsets = WindowInsets(0),
@@ -76,9 +87,25 @@ fun HomeScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            PowerButton(state, onToggle)
-            StatusText(state)
+            PowerButton(state, paused = paused != null, onToggle)
+            StatusText(state, paused)
+            if (paused != null) {
+                Button(onClick = onResume) { Text("Resume now") }
+            } else if (running != null) {
+                TextButton(onClick = onPause) { Text("Pause for $PAUSE_MINUTES minutes") }
+            }
 
+            if (running?.lockdown == true) {
+                NoticeCard(
+                    title = "“Block connections without VPN” is on",
+                    body = "AdBlocker only carries DNS lookups, so apps can't connect while this is on. " +
+                        "Turn it off in VPN settings.",
+                    tone = NoticeTone.Warning,
+                    icon = Icons.Filled.Warning,
+                    actionLabel = "Open VPN settings",
+                    onAction = { context.openSystemSettings(Settings.ACTION_VPN_SETTINGS) },
+                )
+            }
             if (privateDnsServer != null) {
                 NoticeCard(
                     title = "Private DNS is bypassing AdBlocker",
@@ -110,22 +137,25 @@ fun HomeScreen(
             }
             TotalsCard(totals)
 
-            NoticeCard(
-                title = "Keep protection on",
-                body = "Turn on Always-on VPN for AdBlocker so Android restarts it by itself. " +
-                    "Leave “Block connections without VPN” off, or apps will lose their connection.",
-                tone = NoticeTone.Info,
-                icon = Icons.Filled.Info,
-                actionLabel = "Open VPN settings",
-                onAction = { context.openSystemSettings(Settings.ACTION_VPN_SETTINGS) },
-            )
+            // Not needed once Always-on VPN is set up (Android 10 and later can tell).
+            if (running?.alwaysOn != true) {
+                NoticeCard(
+                    title = "Keep protection on",
+                    body = "Turn on Always-on VPN for AdBlocker so Android restarts it by itself. " +
+                        "Leave “Block connections without VPN” off, or apps will lose their connection.",
+                    tone = NoticeTone.Info,
+                    icon = Icons.Filled.Info,
+                    actionLabel = "Open VPN settings",
+                    onAction = { context.openSystemSettings(Settings.ACTION_VPN_SETTINGS) },
+                )
+            }
             TextButton(onClick = onOpenActivity) { Text("See what was blocked") }
         }
     }
 }
 
 @Composable
-private fun PowerButton(state: VpnState, onClick: () -> Unit) {
+private fun PowerButton(state: VpnState, paused: Boolean, onClick: () -> Unit) {
     val on = state is VpnState.Running
     val starting = state is VpnState.Starting
     val ring by animateColorAsState(
@@ -153,6 +183,7 @@ private fun PowerButton(state: VpnState, onClick: () -> Unit) {
             .semantics {
                 contentDescription = "Protection"
                 stateDescription = when {
+                    on && paused -> "Paused"
                     on -> "On"
                     starting -> "Starting"
                     else -> "Off"
@@ -168,9 +199,13 @@ private fun PowerButton(state: VpnState, onClick: () -> Unit) {
 }
 
 @Composable
-private fun StatusText(state: VpnState) {
+private fun StatusText(state: VpnState, pausedUntil: Long?) {
     val (title, detail) = when (state) {
-        is VpnState.Running -> "Protection is on" to "Ads and trackers are blocked in apps, games and browsers."
+        is VpnState.Running -> if (pausedUntil != null) {
+            "Paused until ${formatClock(pausedUntil)}" to "Nothing is blocked until then. After that, blocking starts again by itself."
+        } else {
+            "Protection is on" to "Ads and trackers are blocked in apps, games and browsers."
+        }
         VpnState.Starting -> "Starting…" to "Loading your filter lists."
         is VpnState.Failed -> "Protection is off" to "Tap the button to try again."
         VpnState.Stopped -> "Protection is off" to "Tap the button to start blocking."

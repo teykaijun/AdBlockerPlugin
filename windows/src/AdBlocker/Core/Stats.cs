@@ -84,8 +84,9 @@ public sealed class Stats(string file)
         {
             AtomicFile.WriteAllText(file, JsonSerializer.Serialize(snapshot, AppJson.Default.StatsSnapshot));
         }
-        catch (IOException)
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
+            // Someone was reading the file for a while; the next save, a few seconds later, catches up.
         }
     }
 
@@ -93,9 +94,14 @@ public sealed class Stats(string file)
     {
         try
         {
-            return File.Exists(file) ? JsonSerializer.Deserialize(File.ReadAllText(file), AppJson.Default.StatsSnapshot) : null;
+            if (!File.Exists(file)) return null;
+            // A short read. The blocker can't replace the file until it is closed, whatever the
+            // sharing here; AtomicFile.Replace retries for that moment, and a failed save is retried
+            // at the next one anyway.
+            using var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            return JsonSerializer.Deserialize(stream, AppJson.Default.StatsSnapshot);
         }
-        catch (Exception e) when (e is JsonException or IOException)
+        catch (Exception e) when (e is JsonException or IOException or UnauthorizedAccessException)
         {
             return null;
         }

@@ -44,11 +44,12 @@ class TabCloserService : AccessibilityService() {
         }
 
         val window = root.windowId
-        val host = guard.onAddressBar(browser, window, reading, rules.matcher::isBlocked) ?: return
+        val host = guard.onAddressBar(browser, window, reading) { blockedAsShown(it, VpnController::blocks) } ?: return
         if (!performGlobalAction(GLOBAL_ACTION_BACK)) return
         TabCloser.recordLeft(host)
         // The scam warning notification explains the rest.
-        val message = if (rules.isScam(host)) "AdBlocker left a suspected scam site: $host" else "AdBlocker left a blocked page: $host"
+        val scam = blockedAsShown(host, rules::isScam)
+        val message = if (scam) "AdBlocker left a suspected scam site: $host" else "AdBlocker left a blocked page: $host"
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
         handler.postDelayed({
             // No active window means a transition is still running; that tells us nothing.

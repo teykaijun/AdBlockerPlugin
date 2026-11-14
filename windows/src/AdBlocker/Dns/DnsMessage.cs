@@ -12,6 +12,7 @@ public static class DnsMessage
     public const ushort TypeOpt = 41;
     public const int RcodeServFail = 2;
     public const int RcodeNxDomain = 3;
+    public const int RcodeRefused = 5;
 
     private const int MaxNameLength = 253;
     private const int ClassicUdpLimit = 512;
@@ -174,6 +175,24 @@ public static class DnsMessage
     public static bool IsTruncated(ReadOnlySpan<byte> message) => message.Length >= HeaderSize && (message[2] & 0x02) != 0;
 
     public static int ResponseCode(ReadOnlySpan<byte> message) => message.Length >= HeaderSize ? message[3] & 0x0F : -1;
+
+    /// <summary>
+    /// <paramref name="name"/> safe to write to a log or a terminal: anything but printable ASCII
+    /// (a space, a line break, an escape sequence) becomes a backslash and three decimal digits,
+    /// as in DNS zone files, and so does the backslash itself. A crafted lookup can then neither
+    /// forge log lines nor send escape codes to a console. Matching keeps using the raw name.
+    /// </summary>
+    public static string Printable(string name)
+    {
+        if (!name.AsSpan().ContainsAnyExceptInRange('!', '~') && !name.Contains('\\')) return name;
+        var text = new System.Text.StringBuilder(name.Length + 8);
+        foreach (var c in name)
+        {
+            if (c is >= '!' and <= '~' and not '\\') text.Append(c);
+            else text.Append('\\').Append(((int)c).ToString("D3", System.Globalization.CultureInfo.InvariantCulture));
+        }
+        return text.ToString();
+    }
 
     public static string TypeName(ushort type) => type switch
     {

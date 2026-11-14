@@ -51,7 +51,8 @@ export class Guard {
    * @param {(host: string) => Promise<boolean>} deps.isBlocked asks AdBlocker
    * @param {(tabId: number) => Promise<void>} deps.closeTab
    * @param {(tabId: number) => Promise<void>} deps.goBack rejects when there is no previous page
-   * @param {(kind: 'closed' | 'redirect', host: string) => void} deps.report
+   * @param {(kind: 'closed' | 'redirect' | 'shown', host: string) => void} deps.report
+   *   'shown' means the error page stayed, because there was nothing to go back to
    * @param {() => number} [deps.now]
    */
   constructor({ isBlocked, closeTab, goBack, report, now = () => Date.now() }) {
@@ -87,12 +88,15 @@ export class Guard {
     }
     // The tab itself was sent to an ad. The page couldn't load anyway, so step back.
     if (!this.#mayGoBack(tabId)) return;
+    let wentBack = true;
     try {
       await this.goBack(tabId);
-      this.report('redirect', host);
     } catch {
-      // Nothing to go back to (a new tab); leave the error page.
+      // Nothing to go back to, such as a link from another app that opened a new tab, so the
+      // error page stays. Still report it: a scam site should be named, not just look broken.
+      wentBack = false;
     }
+    this.report(wentBack ? 'redirect' : 'shown', host);
   }
 
   /** A tab was closed (tabs.onRemoved). */

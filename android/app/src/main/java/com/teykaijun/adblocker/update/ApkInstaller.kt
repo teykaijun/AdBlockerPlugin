@@ -23,19 +23,27 @@ object ApkInstaller {
             setAppPackageName(context.packageName)
         }
         val sessionId = installer.createSession(params)
-        installer.openSession(sessionId).use { session ->
-            session.openWrite("adblocker", 0, apk.length()).use { output ->
-                apk.inputStream().use { it.copyTo(output) }
-                session.fsync(output)
+        try {
+            installer.openSession(sessionId).use { session ->
+                session.openWrite("adblocker", 0, apk.length()).use { output ->
+                    apk.inputStream().use { it.copyTo(output) }
+                    session.fsync(output)
+                }
+                val callback = PendingIntent.getBroadcast(
+                    context,
+                    sessionId,
+                    Intent(context, InstallReceiver::class.java).setPackage(context.packageName),
+                    PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+                )
+                session.commit(callback.intentSender)
             }
-            val callback = PendingIntent.getBroadcast(
-                context,
-                sessionId,
-                Intent(context, InstallReceiver::class.java).setPackage(context.packageName),
-                PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-            )
-            session.commit(callback.intentSender)
+        } catch (e: Exception) {
+            // Otherwise the half-written copy stays in the system until it expires.
+            runCatching { installer.abandonSession(sessionId) }
+            throw e
         }
+        // The session holds its own copy now.
+        apk.delete()
     }
 }
 
@@ -48,12 +56,19 @@ class InstallReceiver : BroadcastReceiver() {
                 if (confirm == null) {
                     UpdateController.installFailed("Android did not offer the install screen.")
                 } else {
-                    context.startActivity(confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    // Android may not open it while AdBlocker is in the background; Settings can open it again.
+                    UpdateController.awaitConfirmation(confirm)
+                    runCatching { context.startActivity(Intent(confirm).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
                 }
             }
             // The app is replaced right after this, so there is nothing left to show.
             PackageInstaller.STATUS_SUCCESS -> UpdateController.installFinished()
             PackageInstaller.STATUS_FAILURE_ABORTED -> UpdateController.installCancelled()
+            PackageInstaller.STATUS_FAILURE_CONFLICT -> UpdateController.installFailed(
+                "This copy of AdBlocker is signed with a different key, so Android can't update it. " +
+                    "Uninstall it, then install AdBlocker.apk from the releases page.",
+                canRetry = false,
+            )
             else -> UpdateController.installFailed(
                 intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE) ?: "Android refused the update ($status).",
             )

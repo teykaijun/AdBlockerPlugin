@@ -101,6 +101,11 @@
             android:name=".vpn.AllowSiteReceiver"
             android:exported="false" />
 
+        <!-- The "Pause 10 min" and "Resume" buttons on the status notification. -->
+        <receiver
+            android:name=".vpn.PauseReceiver"
+            android:exported="false" />
+
         <!-- How Android's package installer reports back about an in-app update. -->
         <receiver
             android:name=".update.InstallReceiver"

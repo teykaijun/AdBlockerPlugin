@@ -2,6 +2,7 @@ package com.teykaijun.adblocker.data
 
 import android.content.Context
 import androidx.core.content.edit
+import com.teykaijun.adblocker.dns.UserRules
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.InetAddress
@@ -62,6 +63,10 @@ data class Settings(
     val remoteLists: List<RemoteList> = emptyList(),
     val blockedDomains: Set<String> = emptySet(),
     val allowedDomains: Set<String> = emptySet(),
+    /** Domains allowed until a time (epoch milliseconds), from "Allow for 10 minutes". */
+    val temporaryAllowed: Map<String, Long> = emptyMap(),
+    /** When a pause ends (epoch milliseconds); null or past means not paused. */
+    val pausedUntil: Long? = null,
     /** Packages that bypass the VPN entirely. */
     val bypassApps: Set<String> = emptySet(),
     val dnsProvider: DnsProvider = DnsProvider.NETWORK,
@@ -72,14 +77,56 @@ data class Settings(
 ) {
     fun isBuiltInEnabled(list: BuiltInList) = builtInLists[list.id] ?: list.enabledByDefault
 
-    /** Adds `domain` to one custom list and removes it from the other. */
+    /**
+     * Adds `domain` to one custom list and removes it from the other. An allowance for exactly
+     * this domain ends, so the new rule applies at once.
+     */
     fun withDomainRule(domain: String, allow: Boolean) = copy(
         blockedDomains = if (allow) blockedDomains - domain else blockedDomains + domain,
         allowedDomains = if (allow) allowedDomains + domain else allowedDomains - domain,
+        temporaryAllowed = temporaryAllowed - domain,
     )
 
-    fun withoutDomainRule(domain: String) = copy(blockedDomains = blockedDomains - domain, allowedDomains = allowedDomains - domain)
+    fun withoutDomainRule(domain: String) = copy(
+        blockedDomains = blockedDomains - domain,
+        allowedDomains = allowedDomains - domain,
+        temporaryAllowed = temporaryAllowed - domain,
+    )
+
+    /** Allows `domain` and its subdomains for `minutes`, dropping entries that already ran out. */
+    fun withTemporaryAllow(domain: String, minutes: Long, now: Long = System.currentTimeMillis()) = copy(
+        temporaryAllowed = temporaryAllowed.filterValues { it > now } + (domain to now + minutes * 60_000),
+    )
+
+    /** Ends the allowances that cover `domain`: its own and its parents'. Permanent rules stay. */
+    fun withoutAllowancesFor(domain: String) = copy(
+        temporaryAllowed = temporaryAllowed.filterKeys { allowed -> domain != allowed && !domain.endsWith(".$allowed") },
+    )
+
+    /** Whether `domain` is blocked once those allowances end; `listed` says whether the lists block it. */
+    fun blockedOnceAllowancesEnd(domain: String, listed: Boolean, now: Long = System.currentTimeMillis()): Boolean =
+        withoutAllowancesFor(domain).userRules().match(domain, now)?.let { !it.allows } ?: listed
+
+    fun isPaused(now: Long = System.currentTimeMillis()) = pausedUntil != null && pausedUntil > now
+
+    /** Lets every lookup through for `minutes`. */
+    fun pausedFor(minutes: Long, now: Long = System.currentTimeMillis()) = copy(pausedUntil = now + minutes * 60_000)
+
+    /** Drops a pause and allowances that have run out. */
+    fun withoutExpired(now: Long = System.currentTimeMillis()) = copy(
+        pausedUntil = pausedUntil?.takeIf { it > now },
+        temporaryAllowed = temporaryAllowed.filterValues { it > now },
+    )
+
+    /** When the pause or the next allowance runs out, or null if there are none. */
+    fun nextExpiry(): Long? = (temporaryAllowed.values + listOfNotNull(pausedUntil)).minOrNull()
+
+    /** The user's own rules, which the VPN applies before the lists. */
+    fun userRules() = UserRules(blockedDomains, allowedDomains, temporaryAllowed, pausedUntil)
 }
+
+/** How long a pause lets every lookup through. */
+const val PAUSE_MINUTES = 10L
 
 /** Settings persisted in SharedPreferences and exposed as a [StateFlow]. */
 class SettingsStore(context: Context) {
@@ -101,6 +148,7 @@ class SettingsStore(context: Context) {
 
     private fun read(): Settings {
         migrate()
+        val now = System.currentTimeMillis()
         val enabledRemote = prefs.getStringSet(KEY_REMOTE_ENABLED, null) ?: presets.filter { it.enabled }.map { it.id }.toSet()
         val custom = parseCustomLists(prefs.getString(KEY_CUSTOM_LISTS, null))
         val remote = (presets + custom).map { it.copy(enabled = it.id in enabledRemote) }
@@ -113,6 +161,8 @@ class SettingsStore(context: Context) {
             remoteLists = remote,
             blockedDomains = prefs.getStringSet(KEY_BLOCKED, emptySet()).orEmpty().toSet(),
             allowedDomains = prefs.getStringSet(KEY_ALLOWED, emptySet()).orEmpty().toSet(),
+            temporaryAllowed = decodeAllowances(prefs.getStringSet(KEY_TEMPORARY, emptySet()).orEmpty(), now),
+            pausedUntil = decodePausedUntil(prefs.getLong(KEY_PAUSED_UNTIL, 0), now),
             bypassApps = prefs.getStringSet(KEY_BYPASS, emptySet()).orEmpty().toSet(),
             dnsProvider = runCatching { DnsProvider.valueOf(prefs.getString(KEY_DNS, null)!!) }.getOrDefault(DnsProvider.NETWORK),
             customDns = prefs.getString(KEY_CUSTOM_DNS, "").orEmpty(),
@@ -146,6 +196,8 @@ class SettingsStore(context: Context) {
             putString(KEY_CUSTOM_LISTS, customListsJson(s.remoteLists.filter { it.custom }))
             putStringSet(KEY_BLOCKED, s.blockedDomains.toSet())
             putStringSet(KEY_ALLOWED, s.allowedDomains.toSet())
+            putStringSet(KEY_TEMPORARY, encodeAllowances(s.temporaryAllowed))
+            putLong(KEY_PAUSED_UNTIL, s.pausedUntil ?: 0)
             putStringSet(KEY_BYPASS, s.bypassApps.toSet())
             putString(KEY_DNS, s.dnsProvider.name)
             putString(KEY_CUSTOM_DNS, s.customDns)
@@ -181,6 +233,8 @@ class SettingsStore(context: Context) {
         const val KEY_CUSTOM_LISTS = "custom_lists"
         const val KEY_BLOCKED = "blocked_domains"
         const val KEY_ALLOWED = "allowed_domains"
+        const val KEY_TEMPORARY = "temporarily_allowed"
+        const val KEY_PAUSED_UNTIL = "paused_until"
         const val KEY_BYPASS = "bypass_apps"
         const val KEY_DNS = "dns_provider"
         const val KEY_CUSTOM_DNS = "custom_dns"
@@ -188,6 +242,19 @@ class SettingsStore(context: Context) {
         const val KEY_AUTO_UPDATES = "auto_check_updates"
     }
 }
+
+/** How [SettingsStore] saves allowances: one "domain=until" string each. */
+internal fun encodeAllowances(allowed: Map<String, Long>): Set<String> = allowed.map { (domain, until) -> "$domain=$until" }.toSet()
+
+/** Reads [encodeAllowances]'s strings back, skipping broken entries and those that ran out. */
+internal fun decodeAllowances(entries: Set<String>, now: Long): Map<String, Long> = entries.mapNotNull { entry ->
+    val domain = entry.substringBefore('=')
+    val until = entry.substringAfter('=', missingDelimiterValue = "").toLongOrNull()
+    if (domain.isNotBlank() && until != null && until > now) domain to until else null
+}.toMap()
+
+/** A saved pause end, or null if it is over. [SettingsStore] saves "no pause" as 0. */
+internal fun decodePausedUntil(saved: Long, now: Long): Long? = saved.takeIf { it > now }
 
 private val IPV4_LITERAL = Regex("""^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$""")
 private val IPV6_LITERAL = Regex("""^[0-9a-fA-F:.]{2,45}$""")

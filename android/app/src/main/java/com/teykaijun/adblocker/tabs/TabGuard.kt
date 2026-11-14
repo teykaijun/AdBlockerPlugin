@@ -48,12 +48,21 @@ fun hostInAddressBar(text: String): String? {
 }
 
 /**
+ * Whether a host shown in an address bar is blocked. Chromium browsers hide a leading "www.", so
+ * `shop.example` may really be `www.shop.example`, which the user may have allowed: then the
+ * page loads, and pressing Back would take it away.
+ */
+fun blockedAsShown(host: String, blocks: (String) -> Boolean): Boolean =
+    blocks(host) && (host.startsWith("www.") || blocks("www.$host"))
+
+/**
  * Decides when to press Back because a browser shows a blocked address, so that a pop-up tab
  * closes, or a redirected tab returns to the page before.
  *
  * It acts once each time the address bar of a window changes to a blocked host. It leaves
  * alone addresses the user opened from the address bar, pages that Back could not leave (the
- * browser went to the background instead), and pages that keep redirecting.
+ * browser went to the background instead), and pages that keep redirecting. Each custom tab is
+ * a new window, so a browser also stops after a run of quick Backs across its windows.
  */
 class TabGuard(private val now: () -> Long) {
 
@@ -70,6 +79,7 @@ class TabGuard(private val now: () -> Long) {
     }
     private val editing = HashSet<String>()
     private val editedAt = HashMap<String, Long>()
+    private val browserBacks = HashMap<String, BurstLimit>()
 
     /**
      * Called with what the address bar of `browser`'s `window` shows. Returns the blocked host
@@ -98,7 +108,8 @@ class TabGuard(private val now: () -> Long) {
             state.leftAlone[host] = time + LEAVE_ALONE_MS
             return null
         }
-        return if (state.backs.tryAcquire(time)) host else null
+        val browserLimit = browserBacks.getOrPut(browser) { BurstLimit(BROWSER_BACK_LIMIT_TIMES, BACK_LIMIT_GAP_MS) }
+        return if (state.backs.tryAcquire(time) && browserLimit.tryAcquire(time)) host else null
     }
 
     /**
@@ -117,6 +128,9 @@ class TabGuard(private val now: () -> Long) {
         /** A page that redirects straight back is left after this many quick Backs. */
         const val BACK_LIMIT_TIMES = 4
         const val BACK_LIMIT_GAP_MS = 3_000L
+
+        /** The same across a browser's windows, for an app that keeps opening custom tabs. */
+        const val BROWSER_BACK_LIMIT_TIMES = 8
         private const val MAX_WINDOWS = 8
     }
 }
